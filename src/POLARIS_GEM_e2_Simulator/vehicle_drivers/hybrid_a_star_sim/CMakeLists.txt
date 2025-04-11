@@ -23,7 +23,6 @@ include_directories(
 
 catkin_install_python(PROGRAMS
   scripts/hybrid_astar_rs_node.py
-  scripts/hybrid_astar_rs.py
   scripts/pure_pursuit_sim.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
