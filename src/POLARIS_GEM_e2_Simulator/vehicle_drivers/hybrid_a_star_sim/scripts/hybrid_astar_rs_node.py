@@ -6,10 +6,24 @@ import numpy as np
 from sensor_msgs.msg import NavSatFix, Imu
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped
+from visualization_msgs.msg import Marker, MarkerArray
 from tf.transformations import euler_from_quaternion
 import pyproj
 import argparse
-from hybrid_astar_rs import hybrid_astar, plot_path
+
+import sys
+import os
+
+# Ensure the `scripts` directory is at the very beginning of the Python path
+scripts_dir = os.path.dirname(__file__)
+if scripts_dir not in sys.path:
+    sys.path.insert(0, scripts_dir)
+
+print("printing paths in main(): ")
+print(sys.path)
+
+from astar_utils import hybrid_astar, plot_path
+
 
 current_utm = None
 current_yaw = None
@@ -50,6 +64,39 @@ def publish_path(path_points, offset_x, offset_y):
     pub.publish(path_msg)
     rospy.loginfo(f"✅ Published {len(path_msg.poses)} waypoints to /waypoints (Gazebo frame)")
 
+def publish_path_markers(path_points, offset_x, offset_y):
+    marker_pub = rospy.Publisher('/path_markers', MarkerArray, queue_size=1, latch=True)
+    rospy.sleep(1.0)
+
+    marker_array = MarkerArray()
+    for i, (x, y, yaw) in enumerate(path_points):
+        marker = Marker()
+        marker.header.frame_id = "map"
+        marker.header.stamp = rospy.Time.now()
+        marker.ns = "path_markers"
+        marker.id = i
+        marker.type = Marker.ARROW
+        marker.action = Marker.ADD
+        marker.pose.position.x = x - offset_x
+        marker.pose.position.y = y - offset_y
+        marker.pose.position.z = 0.0
+        marker.pose.orientation.x = 0.0
+        marker.pose.orientation.y = 0.0
+        marker.pose.orientation.z = math.sin(yaw / 2.0)
+        marker.pose.orientation.w = math.cos(yaw / 2.0)
+        marker.scale.x = 0.5  # Arrow length
+        marker.scale.y = 0.1  # Arrow width
+        marker.scale.z = 0.1  # Arrow height
+        marker.color.a = 1.0  # Alpha
+        marker.color.r = 1.0  # Red
+        marker.color.g = 0.0  # Green
+        marker.color.b = 0.0  # Blue
+
+        marker_array.markers.append(marker)
+
+    marker_pub.publish(marker_array)
+    rospy.loginfo(f"✅ Published {len(marker_array.markers)} markers to /path_markers")
+
 def wait_for_pose():
     global current_utm, current_yaw
     while not rospy.is_shutdown() and (current_utm is None or current_yaw is None):
@@ -73,7 +120,8 @@ def main():
 
     # Get UTM start pose from live GPS
     start_x, start_y = current_utm
-    start_yaw = current_yaw
+    # start_yaw = current_yaw # this takes a few seconds to orient
+    start_yaw = math.radians(180) # fix it to face 180 degrees for now
     start_pose = (start_x, start_y, start_yaw)
 
     # GEM starts at Gazebo: x = -1.5, y = -21
@@ -95,6 +143,8 @@ def main():
 
     if path:
         publish_path(path, offset_x, offset_y)
+
+        publish_path_markers(path, offset_x, offset_y) # off for now
 
         # Optional debug plot in local frame
         local_path = [(x - offset_x, y - offset_y, yaw) for x, y, yaw in path]
