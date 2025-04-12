@@ -65,12 +65,12 @@ def hybrid_astar(start, goal):
 
         dx = current.x - goal[0]
         dy = current.y - goal[1]
-        dist_to_goal = math.hypot(dx, dy)
+        dist_to_goal = math.hypot(dx, dy) # L2 norm, so negative inputs ok
 
         if dist_to_goal <= 2.0:
             return reconstruct_path(current, node_map, goal)
 
-        for steer in np.linspace(-MAX_STEER, MAX_STEER, N_STEER):
+        for steer in np.linspace(-MAX_STEER, MAX_STEER, N_STEER): 
             for direction in [True, False]:
                 step = MOVE_STEP_SIZE if direction else -MOVE_STEP_SIZE
                 next_x = current.x + step * math.cos(current.yaw)
