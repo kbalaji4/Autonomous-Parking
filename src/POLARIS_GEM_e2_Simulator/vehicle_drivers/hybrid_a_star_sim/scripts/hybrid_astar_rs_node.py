@@ -18,7 +18,7 @@ import os
 scripts_dir = os.path.dirname(__file__)
 if scripts_dir not in sys.path:
     sys.path.insert(0, scripts_dir)
-    
+
 print("printing paths in main(): ")
 print(sys.path)
 
@@ -39,7 +39,8 @@ def imu_callback(msg):
     global current_yaw
     q = msg.orientation
     _, _, yaw = euler_from_quaternion([q.x, q.y, q.z, q.w])
-    current_yaw = yaw
+    current_yaw = (yaw + np.pi) % (2*np.pi) # offset by 180, it's backwards for some reason
+    # print(current_yaw)
 
 def publish_path(path_points, offset_x, offset_y):
     pub = rospy.Publisher('/waypoints', Path, queue_size=1, latch=True)
@@ -120,8 +121,8 @@ def main():
 
     # Get UTM start pose from live GPS
     start_x, start_y = current_utm
-    # start_yaw = current_yaw # this takes a few seconds to orient
-    start_yaw = math.radians(180) # fix it to face 180 degrees for now
+    start_yaw = current_yaw # this takes a few seconds to orient
+    # start_yaw = math.radians(180) # fix it to face 180 degrees for now
     start_pose = (start_x, start_y, start_yaw)
 
     # GEM starts at Gazebo: x = -1.5, y = -21
