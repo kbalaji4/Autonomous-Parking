@@ -32,9 +32,11 @@ current_yaw = None
 def gps_callback(msg):
     global current_utm
     lon, lat = msg.longitude, msg.latitude
-    utm_proj = pyproj.Proj(proj='utm', zone=16, ellps='WGS84')
-    x, y = utm_proj(lon, lat)
-    current_utm = (x, y)
+    # print(lon, lat)
+    # utm_proj = pyproj.Proj(proj='utm', zone=16, ellps='WGS84')
+    # x, y = utm_proj(lon, lat)
+    # current_utm = (x, y)
+    current_utm = (lon, lat)
 
 def imu_callback(msg):
     global current_yaw
@@ -133,6 +135,10 @@ def main():
     # Offset between GPS UTM and Gazebo's map frame
     offset_x = start_x - gazebo_start_x
     offset_y = start_y - gazebo_start_y
+
+    print(f"start: {start_x, start_y}")
+    print(f"gazebo: {gazebo_start_x, gazebo_start_y}")
+    print(f"offsets: {offset_x, offset_y}")
 
     # Convert local Gazebo goal to UTM
     goal_x = args.goal_x + offset_x
