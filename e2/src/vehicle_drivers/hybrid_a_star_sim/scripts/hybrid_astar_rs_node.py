@@ -114,8 +114,8 @@ def main():
 
     rospy.init_node("hybrid_astar_rs_node")
 
-    rospy.Subscriber("/gps/fix", NavSatFix, gps_callback)
-    rospy.Subscriber("/imu", Imu, imu_callback)
+    rospy.Subscriber("/septentrio_gnss/navsatfix", NavSatFix, gps_callback)
+    rospy.Subscriber("/septentrio_gnss/imu", Imu, imu_callback)
 
     rospy.loginfo("⌛ Waiting for GPS and IMU...")
     wait_for_pose()
