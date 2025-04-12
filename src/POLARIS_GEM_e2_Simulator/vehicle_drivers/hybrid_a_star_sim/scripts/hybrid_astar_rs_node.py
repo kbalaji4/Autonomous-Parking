@@ -23,6 +23,7 @@ print("printing paths in main(): ")
 print(sys.path)
 
 from astar_utils import hybrid_astar, plot_path
+from constants import STARTX, STARTY, STARTYAW
 
 
 current_utm = None
@@ -121,13 +122,13 @@ def main():
 
     # Get UTM start pose from live GPS
     start_x, start_y = current_utm
-    start_yaw = current_yaw # this takes a few seconds to orient
+    start_yaw = current_yaw # we take this from sensor not ground truth, so 180
     # start_yaw = math.radians(180) # fix it to face 180 degrees for now
     start_pose = (start_x, start_y, start_yaw)
 
     # GEM starts at Gazebo: x = -1.5, y = -21
-    gazebo_start_x = -1.5
-    gazebo_start_y = -21.0
+    gazebo_start_x = STARTX
+    gazebo_start_y = STARTY
 
     # Offset between GPS UTM and Gazebo's map frame
     offset_x = start_x - gazebo_start_x

@@ -11,6 +11,7 @@ from gazebo_msgs.srv import GetModelState
 
 
 from util import euler_to_quaternion
+from constants import STARTX, STARTY, STARTYAW 
 
 def getModelState():
     rospy.wait_for_service('/gazebo/get_model_state')
@@ -55,9 +56,9 @@ def set_position(x = 0,y = 0, yaw=0):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = 'Set the x, y position of the vehicle')
 
-    x_default = -1.5
-    y_default = -21
-    yaw_default = np.pi
+    x_default = STARTX
+    y_default = STARTY
+    yaw_default = STARTYAW
 
     # x_default = 160
     # y_default = 96.5
