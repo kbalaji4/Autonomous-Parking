@@ -18,7 +18,7 @@ import os
 scripts_dir = os.path.dirname(__file__)
 if scripts_dir not in sys.path:
     sys.path.insert(0, scripts_dir)
-
+    
 print("printing paths in main(): ")
 print(sys.path)
 
