@@ -12,6 +12,13 @@ from tf.transformations import euler_from_quaternion
 
 from gazebo_msgs.srv import GetModelState
 
+# GEM Sensor Headers
+from std_msgs.msg import String, Bool, Float32, Float64
+from sensor_msgs.msg import NavSatFix
+
+# GEM PACMod Headers
+from pacmod_msgs.msg import PositionWithSpeed, PacmodCmd, SystemRptFloat, VehicleSpeedRpt
+
 class PurePursuit(object):
     
     def __init__(self):
@@ -30,12 +37,49 @@ class PurePursuit(object):
         rospy.Subscriber("/waypoints", Path, self.path_callback)
         self.ackermann_pub = rospy.Publisher('/ackermann_cmd', AckermannDrive, queue_size=1)
 
-        self.ackermann_msg = AckermannDrive()
-        self.ackermann_msg.steering_angle_velocity = 0.0
-        self.ackermann_msg.acceleration            = 0.0
-        self.ackermann_msg.jerk                    = 0.0
-        self.ackermann_msg.speed                   = 0.0 
-        self.ackermann_msg.steering_angle          = 0.0
+        # -------------------- PACMod setup --------------------
+
+        self.gem_enable    = False
+        self.pacmod_enable = False
+
+        # GEM vehicle enable, publish once
+        self.enable_pub = rospy.Publisher('/pacmod/as_rx/enable', Bool, queue_size=1)
+        self.enable_cmd = Bool()
+        self.enable_cmd.data = False
+
+        # GEM vehicle gear control, neutral, forward and reverse, publish once
+        self.gear_pub = rospy.Publisher('/pacmod/as_rx/shift_cmd', PacmodCmd, queue_size=1)
+        self.gear_cmd = PacmodCmd()
+        self.gear_cmd.ui16_cmd = 2 # SHIFT_NEUTRAL
+
+        # GEM vehilce brake control
+        self.brake_pub = rospy.Publisher('/pacmod/as_rx/brake_cmd', PacmodCmd, queue_size=1)
+        self.brake_cmd = PacmodCmd()
+        self.brake_cmd.enable = False
+        self.brake_cmd.clear  = True
+        self.brake_cmd.ignore = True
+
+        # # Gem speed set to constant?
+        # self.speed_pub = rospy.Publisher('/pacmod/as_tx/vehicle_speed', PacmodCmd, queue_size=1)
+        # self.speed_cmd = PacmodCmd()
+
+        # GEM vechile forward motion control
+        self.accel_pub = rospy.Publisher('/pacmod/as_rx/accel_cmd', PacmodCmd, queue_size=1)
+        self.accel_cmd = PacmodCmd()
+        self.accel_cmd.enable = False
+        self.accel_cmd.clear  = True
+        self.accel_cmd.ignore = True
+
+        # GEM vechile turn signal control
+        self.turn_pub = rospy.Publisher('/pacmod/as_rx/turn_cmd', PacmodCmd, queue_size=1)
+        self.turn_cmd = PacmodCmd()
+        self.turn_cmd.ui16_cmd = 1 # None
+
+        # GEM vechile steering wheel control
+        self.steer_pub = rospy.Publisher('/pacmod/as_rx/steer_cmd', PositionWithSpeed, queue_size=1)
+        self.steer_cmd = PositionWithSpeed()
+        self.steer_cmd.angular_position = 0.0 # radians, -: clockwise, +: counter-clockwise
+        self.steer_cmd.angular_velocity_limit = 2.0 # radians/second
 
     def path_callback(self, msg):
         self.path_points_x = []
@@ -131,9 +175,13 @@ class PurePursuit(object):
 
             rospy.loginfo(f"[PP] Crosstrack Error: {ct_error:.3f} | Steering: {math.degrees(angle):.1f}° | Goal: {self.goal}")
 
-            self.ackermann_msg.speed = 2.8
-            self.ackermann_msg.steering_angle = angle
-            self.ackermann_pub.publish(self.ackermann_msg)
+            # self.ackermann_msg.speed = 2.8
+            # self.ackermann_msg.steering_angle = angle
+            # self.ackermann_pub.publish(self.ackermann_msg)
+            self.steer_cmd.angular_position = np.radians(angle) # steering
+            # self.accel_pub.publish(self.accel_cmd)
+            self.steer_pub.publish(self.steer_cmd)
+            # self.turn_pub.publish(self.turn_cmd) # turn signal haha
 
             self.rate.sleep()
 

@@ -3,7 +3,8 @@
 import rospy
 import math
 import numpy as np
-from sensor_msgs.msg import NavSatFix, Imu
+from sensor_msgs.msg import NavSatFix, Imu #e4
+# Fix is for e2
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped
 from visualization_msgs.msg import Marker, MarkerArray
@@ -133,6 +134,12 @@ def main():
     # Offset between GPS UTM and Gazebo's map frame
     offset_x = start_x - gazebo_start_x
     offset_y = start_y - gazebo_start_y
+    print(f"start: {start_x, start_y}")
+    print(f"gazebo: {gazebo_start_x, gazebo_start_y}")
+    print(f"offsets: {offset_x, offset_y}")
+
+    # offset_x = 0
+    # offset_y = 0
 
     # Convert local Gazebo goal to UTM
     goal_x = args.goal_x + offset_x
