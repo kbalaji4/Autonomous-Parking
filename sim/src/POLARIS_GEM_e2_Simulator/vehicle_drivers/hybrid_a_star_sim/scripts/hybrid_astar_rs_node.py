@@ -23,8 +23,9 @@ if scripts_dir not in sys.path:
 print("printing paths in main(): ")
 print(sys.path)
 
-from astar_utils import hybrid_astar, plot_path
+from astar_utils import hybrid_astar, plot_path, plot_path_walls
 from constants import STARTX, STARTY, STARTYAW
+from walls import Wall, Walls
 
 
 current_utm = None
@@ -136,25 +137,28 @@ def main():
     # Offset between GPS UTM and Gazebo's map frame
     offset_x = start_x - gazebo_start_x
     offset_y = start_y - gazebo_start_y
-    print(f"start: {start_x, start_y}")
-    print(f"gazebo: {gazebo_start_x, gazebo_start_y}")
-    print(f"offsets: {offset_x, offset_y}")
-
+    
     # offset_x = 0
     # offset_y = 0
-
-    print(f"start: {start_x, start_y}")
-    print(f"gazebo: {gazebo_start_x, gazebo_start_y}")
-    print(f"offsets: {offset_x, offset_y}")
 
     # Convert local Gazebo goal to UTM
     goal_x = args.goal_x + offset_x
     goal_y = args.goal_y + offset_y
     goal_yaw = math.radians(args.goal_yaw)
     goal_pose = (goal_x, goal_y, goal_yaw)
+    print(f"start: {start_x, start_y}")
+    print(f"gazebo: {gazebo_start_x, gazebo_start_y}")
+    print(f"offsets: {offset_x, offset_y}")
+    print(f'goal pose: {goal_pose}')
+
+    # add walls
+    walls = Walls()
+    walls.add_wall(-25, -10, -25, -30, offset_x, offset_y)
+    walls.add_wall(-30, -10, -30, -30, offset_x, offset_y)
+    walls.add_wall(-25, -30, -30, -30, offset_x, offset_y)
 
     rospy.loginfo("🚀 Planning path from live GPS to local goal...")
-    path = hybrid_astar(start_pose, goal_pose)
+    path = hybrid_astar(start_pose, goal_pose, walls)
 
     if path:
         publish_path(path, offset_x, offset_y)
@@ -163,8 +167,10 @@ def main():
 
         # Optional debug plot in local frame
         local_path = [(x - offset_x, y - offset_y, yaw) for x, y, yaw in path]
-        plot_path(local_path, (start_x - offset_x, start_y - offset_y, start_yaw),
-                  (goal_x - offset_x, goal_y - offset_y, goal_yaw))
+        plot_path_walls(local_path, (start_x - offset_x, start_y - offset_y, start_yaw),
+                  (goal_x - offset_x, goal_y - offset_y, goal_yaw), walls)
+        # plot_path(local_path, (start_x - offset_x, start_y - offset_y, start_yaw),
+        #           (goal_x - offset_x, goal_y - offset_y, goal_yaw))
     else:
         rospy.logerr("❌ Path planning failed.")
 

@@ -3,6 +3,8 @@ import math
 import heapq
 from collections import deque
 from scipy.spatial import distance
+import matplotlib.pyplot as plt
+from walls import Wall, Walls
 
 XY_GRID_RESOLUTION = 1.0
 YAW_GRID_RESOLUTION = np.deg2rad(15.0)
@@ -43,7 +45,7 @@ def calc_index(x, y, yaw):
     yaw_ind = round(yaw / YAW_GRID_RESOLUTION)
     return x_ind, y_ind, yaw_ind
 
-def hybrid_astar(start, goal):
+def hybrid_astar(start, goal, walls):
     start_index = calc_index(start[0], start[1], start[2])
     goal_index = calc_index(goal[0], goal[1], goal[2])
     
@@ -59,7 +61,7 @@ def hybrid_astar(start, goal):
         _, current = heapq.heappop(open_list)
         key = ((current.x_ind, current.y_ind, current.yaw_ind), current.direction)
 
-        if key in closed_set:
+        if key in closed_set or walls.is_occupied(current.x_ind, current.y_ind):
             continue
         closed_set.add(key)
 
@@ -101,6 +103,48 @@ def reconstruct_path(goal_node, node_map, goal):
         node = node_map.get(node.parent_index)
     path.extend(reeds_shepp_path(path[-1], goal, radius=2.0))
     return list(path)
+
+# plot path AND walls?
+
+def plot_path_walls(path, start, goal, walls):
+    xs = [p[0] for p in path]
+    ys = [p[1] for p in path]
+    yaws = [p[2] for p in path]
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+
+
+    # the path points
+    axes[0].plot(xs, ys, '-b')
+    for _, wall in walls.walls.items():
+        axes[0].plot(wall.xpoints, wall.ypoints, 'k', linewidth=1.5)
+        axes[1].plot(wall.xpoints, wall.ypoints, 'k', linewidth=1.5)
+    axes[0].plot(start[0], start[1], 'og', label='Start') # start and end points
+    axes[0].plot(goal[0], goal[1], 'xr', label='Goal')
+    axes[0].axis("equal")
+    axes[0].grid(True)
+    axes[0].legend()
+    axes[0].set_title("Hybrid A* Path")
+
+    # path points that are orientation instead
+    axes[1].plot(xs, ys, '-b', label="Path")
+    axes[1].quiver(xs, ys, 
+                   np.cos(yaws), np.sin(yaws), 
+                   angles='xy', scale_units='xy', scale=1, color='r', label="Yaw")
+    # plot start and end points?
+    axes[1].quiver(start[0], start[1], 
+                   np.cos(start[2]), np.sin(start[2]), 
+                   angles='xy', scale_units='xy', scale=1, color='b', label="Start")
+    axes[1].quiver(goal[0], goal[1], 
+                   np.cos(goal[2]), np.sin(goal[2]), 
+                   angles='xy', scale_units='xy', scale=1, color='g', label="Goal")
+    # axes[1].plot(start[0], start[1], 'og', label='Start')
+    # axes[1].plot(goal[0], goal[1], 'xr', label='Goal')
+    axes[1].axis("equal")
+    axes[1].grid(True)
+    axes[1].legend()
+    axes[1].set_title("Path with Waypoints and Orientations")
+    plt.tight_layout()
+    plt.show()
 
 def plot_path(path, start, goal):
     import matplotlib.pyplot as plt
