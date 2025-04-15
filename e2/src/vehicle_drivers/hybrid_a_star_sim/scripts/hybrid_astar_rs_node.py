@@ -37,12 +37,23 @@ def gps_callback(msg):
     x, y = utm_proj(lon, lat)
     current_utm = (x, y)
 
-def imu_callback(msg):
-    global current_yaw
-    q = msg.orientation
-    _, _, yaw = euler_from_quaternion([q.x, q.y, q.z, q.w])
-    current_yaw = (yaw + np.pi) % (2*np.pi) # offset by 180, it's backwards for some reason
-    # print(current_yaw)
+# def imu_callback(msg):
+#     global current_yaw
+#     q = msg.orientation
+#     _, _, yaw = euler_from_quaternion([q.x, q.y, q.z, q.w])
+#     current_yaw = (yaw + np.pi) % (2*np.pi) # offset by 180, it's backwards for some reason
+#     # print(current_yaw)
+
+def ins_callback(self, msg):
+    current_yaw = heading_to_yaw(round(msg.heading, 6))
+    # pls be radians and modded
+
+def heading_to_yaw(self, heading_curr):
+    if (heading_curr >= 270 and heading_curr < 360):
+        yaw_curr = np.radians(450 - heading_curr)
+    else:
+        yaw_curr = np.radians(90 - heading_curr)
+    return yaw_curr
 
 def publish_path(path_points, offset_x, offset_y):
     pub = rospy.Publisher('/waypoints', Path, queue_size=1, latch=True)
@@ -67,38 +78,38 @@ def publish_path(path_points, offset_x, offset_y):
     pub.publish(path_msg)
     rospy.loginfo(f"✅ Published {len(path_msg.poses)} waypoints to /waypoints (Gazebo frame)")
 
-def publish_path_markers(path_points, offset_x, offset_y):
-    marker_pub = rospy.Publisher('/path_markers', MarkerArray, queue_size=1, latch=True)
-    rospy.sleep(1.0)
+# def publish_path_markers(path_points, offset_x, offset_y):
+#     marker_pub = rospy.Publisher('/path_markers', MarkerArray, queue_size=1, latch=True)
+#     rospy.sleep(1.0)
 
-    marker_array = MarkerArray()
-    for i, (x, y, yaw) in enumerate(path_points):
-        marker = Marker()
-        marker.header.frame_id = "map"
-        marker.header.stamp = rospy.Time.now()
-        marker.ns = "path_markers"
-        marker.id = i
-        marker.type = Marker.ARROW
-        marker.action = Marker.ADD
-        marker.pose.position.x = x - offset_x
-        marker.pose.position.y = y - offset_y
-        marker.pose.position.z = 0.0
-        marker.pose.orientation.x = 0.0
-        marker.pose.orientation.y = 0.0
-        marker.pose.orientation.z = math.sin(yaw / 2.0)
-        marker.pose.orientation.w = math.cos(yaw / 2.0)
-        marker.scale.x = 0.5  # Arrow length
-        marker.scale.y = 0.1  # Arrow width
-        marker.scale.z = 0.1  # Arrow height
-        marker.color.a = 1.0  # Alpha
-        marker.color.r = 1.0  # Red
-        marker.color.g = 0.0  # Green
-        marker.color.b = 0.0  # Blue
+#     marker_array = MarkerArray()
+#     for i, (x, y, yaw) in enumerate(path_points):
+#         marker = Marker()
+#         marker.header.frame_id = "map"
+#         marker.header.stamp = rospy.Time.now()
+#         marker.ns = "path_markers"
+#         marker.id = i
+#         marker.type = Marker.ARROW
+#         marker.action = Marker.ADD
+#         marker.pose.position.x = x - offset_x
+#         marker.pose.position.y = y - offset_y
+#         marker.pose.position.z = 0.0
+#         marker.pose.orientation.x = 0.0
+#         marker.pose.orientation.y = 0.0
+#         marker.pose.orientation.z = math.sin(yaw / 2.0)
+#         marker.pose.orientation.w = math.cos(yaw / 2.0)
+#         marker.scale.x = 0.5  # Arrow length
+#         marker.scale.y = 0.1  # Arrow width
+#         marker.scale.z = 0.1  # Arrow height
+#         marker.color.a = 1.0  # Alpha
+#         marker.color.r = 1.0  # Red
+#         marker.color.g = 0.0  # Green
+#         marker.color.b = 0.0  # Blue
 
-        marker_array.markers.append(marker)
+#         marker_array.markers.append(marker)
 
-    marker_pub.publish(marker_array)
-    rospy.loginfo(f"✅ Published {len(marker_array.markers)} markers to /path_markers")
+#     marker_pub.publish(marker_array)
+#     rospy.loginfo(f"✅ Published {len(marker_array.markers)} markers to /path_markers")
 
 def wait_for_pose():
     global current_utm, current_yaw
@@ -115,7 +126,8 @@ def main():
     rospy.init_node("hybrid_astar_rs_node")
 
     rospy.Subscriber("/septentrio_gnss/navsatfix", NavSatFix, gps_callback)
-    rospy.Subscriber("/septentrio_gnss/imu", Imu, imu_callback)
+    # rospy.Subscriber("/septentrio_gnss/imu", Imu, imu_callback)
+    rospy.Subscriber("/septentrio_gnss/insnavgeod", INSNavGeod, ins_callback)
 
     rospy.loginfo("⌛ Waiting for GPS and IMU...")
     wait_for_pose()
@@ -153,7 +165,7 @@ def main():
     if path:
         publish_path(path, offset_x, offset_y)
 
-        publish_path_markers(path, offset_x, offset_y) # off for now
+        # publish_path_markers(path, offset_x, offset_y) # off for now
 
         # Optional debug plot in local frame
         local_path = [(x - offset_x, y - offset_y, yaw) for x, y, yaw in path]

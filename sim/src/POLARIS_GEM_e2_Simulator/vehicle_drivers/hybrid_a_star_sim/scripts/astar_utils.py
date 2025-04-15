@@ -9,8 +9,9 @@ from walls import Wall, Walls
 XY_GRID_RESOLUTION = 1.0
 YAW_GRID_RESOLUTION = np.deg2rad(15.0)
 MOVE_STEP_SIZE = 1.0
-WB = 2.0
-MAX_STEER = np.deg2rad(30.0)
+WB = 1.75
+RADIUS = 3.175
+MAX_STEER = np.arctan(WB/RADIUS)
 N_STEER = 5
 
 def reeds_shepp_path(start, goal, radius):
@@ -73,7 +74,7 @@ def hybrid_astar(start, goal, walls):
             return reconstruct_path(current, node_map, goal)
 
         for steer in np.linspace(-MAX_STEER, MAX_STEER, N_STEER): 
-            for direction in [True, False]:
+            for direction in [True]:
                 step = MOVE_STEP_SIZE if direction else -MOVE_STEP_SIZE
                 next_x = current.x + step * math.cos(current.yaw)
                 next_y = current.y + step * math.sin(current.yaw)

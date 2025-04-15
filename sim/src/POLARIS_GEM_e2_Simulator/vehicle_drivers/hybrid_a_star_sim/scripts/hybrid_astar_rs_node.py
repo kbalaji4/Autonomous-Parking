@@ -157,6 +157,10 @@ def main():
     walls.add_wall(-30, -10, -30, -30, offset_x, offset_y)
     walls.add_wall(-25, -30, -30, -30, offset_x, offset_y)
 
+    # walls.add_wall(-26, -10, -26, -30, offset_x, offset_y)
+    # walls.add_wall(-29, -10, -29, -30, offset_x, offset_y)
+    # walls.add_wall(-26, -30, -29, -30, offset_x, offset_y)
+
     rospy.loginfo("🚀 Planning path from live GPS to local goal...")
     path = hybrid_astar(start_pose, goal_pose, walls)
 

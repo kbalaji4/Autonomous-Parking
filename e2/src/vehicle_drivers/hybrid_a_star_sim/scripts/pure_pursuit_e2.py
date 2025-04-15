@@ -36,7 +36,6 @@ from sensor_msgs.msg import NavSatFix
 from novatel_gps_msgs.msg import NovatelPosition, NovatelXYZ, Inspva
 from septentrio_gnss_driver.msg import INSNavGeod # they do septentrio
 
-
 # GEM PACMod Headers
 from pacmod_msgs.msg import PositionWithSpeed, PacmodCmd, SystemRptFloat, VehicleSpeedRpt
 
@@ -61,7 +60,9 @@ class PurePursuit(object):
         
         rospy.Subscriber("/waypoints", Path, self.path_callback)
 
-        self.gnss_sub_old   = rospy.Subscriber("/novatel/inspva", Inspva, self.inspva_callback)
+        # don't need novatel no more
+        # self.gnss_sub_old   = rospy.Subscriber("/novatel/inspva", Inspva, self.inspva_callback)
+
         # we replaced novatel hardware with septentrio hardware on e2
         self.gnss_sub   = rospy.Subscriber("/septentrio_gnss/navsatfix", NavSatFix, self.gnss_callback)
         self.ins_sub    = rospy.Subscriber("/septentrio_gnss/insnavgeod", INSNavGeod, self.ins_callback)
@@ -140,8 +141,7 @@ class PurePursuit(object):
             # self.path_points_y.append(y)
             self.path_points_lon_x.append(x)
             self.path_points_lon_y.append(y)
-            self.path_points_heading(yaw)
-            # self.path_points_yaw.append(yaw)
+            self.path_points_heading.append(yaw) # yaw is heading? in radians
 
         self.dist_arr = np.zeros(len(self.path_points_x))
         rospy.loginfo(f"✅ Received {len(self.path_points_x)} waypoints.")
