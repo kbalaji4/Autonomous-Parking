@@ -2,4 +2,6 @@ import numpy as np
 
 STARTX = -1.5
 STARTY = -21.0
+GPS_STARTLON =  -88.2357
+GPS_STARTLAT = 40.0928
 STARTYAW = np.pi

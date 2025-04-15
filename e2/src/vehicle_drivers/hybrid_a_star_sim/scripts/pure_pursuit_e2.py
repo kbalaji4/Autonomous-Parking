@@ -29,6 +29,7 @@ from pid_controllers import PID
 # ROS Headers
 import alvinxy.alvinxy as axy # Import AlvinXY transformation module
 import rospy
+import pyproj
 
 # GEM Sensor Headers
 from std_msgs.msg import String, Bool, Float32, Float64
@@ -49,12 +50,12 @@ class PurePursuit(object):
     def __init__(self):
 
         self.path_points_lon_x = []
-        self.path_points_lon_y = []
+        self.path_points_lat_y = []
         self.path_points_heading = []
 
         self.rate       = rospy.Rate(10)
 
-        self.look_ahead = 4
+        self.look_ahead = 10 # was 4 before
         self.wheelbase  = 1.75 # meters
         self.offset     = 0.46 # meters
         
@@ -136,15 +137,17 @@ class PurePursuit(object):
             y = pose.pose.position.y
             quat = pose.pose.orientation
             _, _, yaw = euler_from_quaternion([quat.x, quat.y, quat.z, quat.w])
-
+            print(f"yaw in hybrid a star after euler from quat: {yaw}")
+            # raw yaw is like oscillating between pi and negative pi when facing west
+            yaw = (yaw + np.pi) % (2*np.pi) # offset by 180. 
             # self.path_points_x.append(x)
             # self.path_points_y.append(y)
             self.path_points_lon_x.append(x)
-            self.path_points_lon_y.append(y)
+            self.path_points_lat_y.append(y)
             self.path_points_heading.append(yaw) # yaw is heading? in radians
 
-        self.dist_arr = np.zeros(len(self.path_points_x))
-        rospy.loginfo(f"✅ Received {len(self.path_points_x)} waypoints.")
+        self.dist_arr = np.zeros(len(self.path_points_lon_x))
+        rospy.loginfo(f"✅ Received {len(self.path_points_lon_x)} waypoints.")
 
     def inspva_callback(self, inspva_msg):
         self.lat     = inspva_msg.latitude  # latitude
@@ -209,15 +212,23 @@ class PurePursuit(object):
         # vehicle gnss heading (yaw) in degrees
         # vehicle x, y position in fixed local frame, in meters
         # reference point is located at the center of GNSS antennas
-        local_x_curr, local_y_curr = self.wps_to_local_xy(self.lon, self.lat)
+        # local_x_curr, local_y_curr = self.wps_to_local_xy(self.lon, self.lat)
+        local_x_curr, local_y_curr = self.lon, self.lat # pure septentrio to match planner
 
         # heading to yaw (degrees to radians)
         # heading is calculated from two GNSS antennas
-        curr_yaw = self.heading_to_yaw(self.heading) 
+        # curr_yaw = self.heading_to_yaw(self.heading) 
+        curr_yaw = self.heading
 
         # reference point is located at the center of rear axle
-        curr_x = local_x_curr - self.offset * np.cos(curr_yaw)
-        curr_y = local_y_curr - self.offset * np.sin(curr_yaw)
+        # curr_x = local_x_curr - self.offset * np.cos(curr_yaw)
+        # curr_y = local_y_curr - self.offset * np.sin(curr_yaw)
+
+        # project from long/lat to utm since planner uses utm
+        goal_proj = pyproj.Proj(proj='utm', zone=16, ellps='WGS84')
+        # print(f"b4 proj curr_x: {local_x_curr}")
+        # print(f"b4 proj curr_y: {local_y_curr}")
+        curr_x, curr_y = goal_proj(local_x_curr, local_y_curr)
 
         return round(curr_x, 3), round(curr_y, 3), round(curr_yaw, 4)
 
@@ -272,21 +283,24 @@ class PurePursuit(object):
                     self.gem_enable = True
 
 
-            self.path_points_x = np.array(self.path_points_lon_x)
-            self.path_points_y = np.array(self.path_points_lat_y)
+            self.path_points_lon_x = np.array(self.path_points_lon_x)
+            self.path_points_lat_y = np.array(self.path_points_lat_y)
 
             curr_x, curr_y, curr_yaw = self.get_gem_state()
+            print(f'currx: {curr_x}')
+            print(f'curry: {curr_y}')
+            print(f'curry aw: {curr_yaw}')
 
             # finding the distance of each way point from the current position
-            for i in range(len(self.path_points_x)):
-                self.dist_arr[i] = self.dist((self.path_points_x[i], self.path_points_y[i]), (curr_x, curr_y))
-
+            for i in range(len(self.path_points_lon_x)):
+                self.dist_arr[i] = self.dist((self.path_points_lon_x[i], self.path_points_lat_y[i]), (curr_x, curr_y))
+            print(f'dist arr: {self.dist_arr}')
             # finding those points which are less than the look ahead distance (will be behind and ahead of the vehicle)
             goal_arr = np.where( (self.dist_arr < self.look_ahead + 0.3) & (self.dist_arr > self.look_ahead - 0.3) )[0]
 
             # finding the goal point which is the last in the set of points less than the lookahead distance
             for idx in goal_arr:
-                v1 = [self.path_points_x[idx]-curr_x , self.path_points_y[idx]-curr_y]
+                v1 = [self.path_points_lon_x[idx]-curr_x , self.path_points_lat_y[idx]-curr_y]
                 v2 = [np.cos(curr_yaw), np.sin(curr_yaw)]
                 temp_angle = self.find_angle(v1,v2)
                 # find correct look-ahead point by using heading information

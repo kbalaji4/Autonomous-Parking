@@ -3,8 +3,9 @@
 import rospy
 import math
 import numpy as np
-from sensor_msgs.msg import NavSatFix, Imu #e4
+from sensor_msgs.msg import NavSatFix
 # Fix is for e2
+from septentrio_gnss_driver.msg import INSNavGeod
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped
 from visualization_msgs.msg import Marker, MarkerArray
@@ -24,7 +25,7 @@ print("printing paths in main(): ")
 print(sys.path)
 
 from astar_utils import hybrid_astar, plot_path
-from constants import STARTX, STARTY, STARTYAW
+from constants import STARTX, STARTY, STARTYAW, GPS_STARTLON, GPS_STARTLAT 
 
 
 current_utm = None
@@ -36,6 +37,7 @@ def gps_callback(msg):
     utm_proj = pyproj.Proj(proj='utm', zone=16, ellps='WGS84')
     x, y = utm_proj(lon, lat)
     current_utm = (x, y)
+    # current_utm = {lon, lat}
 
 # def imu_callback(msg):
 #     global current_yaw
@@ -44,11 +46,12 @@ def gps_callback(msg):
 #     current_yaw = (yaw + np.pi) % (2*np.pi) # offset by 180, it's backwards for some reason
 #     # print(current_yaw)
 
-def ins_callback(self, msg):
+def ins_callback(msg):
+    global current_yaw
     current_yaw = heading_to_yaw(round(msg.heading, 6))
     # pls be radians and modded
 
-def heading_to_yaw(self, heading_curr):
+def heading_to_yaw(heading_curr):
     if (heading_curr >= 270 and heading_curr < 360):
         yaw_curr = np.radians(450 - heading_curr)
     else:
@@ -142,25 +145,43 @@ def main():
     # GEM starts at Gazebo: x = -1.5, y = -21
     gazebo_start_x = STARTX
     gazebo_start_y = STARTY
+    # gazebo_start_x = GPS_STARTLON
+    # gazebo_start_y = GPS_STARTLAT
 
     # Offset between GPS UTM and Gazebo's map frame
-    offset_x = start_x - gazebo_start_x
-    offset_y = start_y - gazebo_start_y
-    print(f"start: {start_x, start_y}")
-    print(f"gazebo: {gazebo_start_x, gazebo_start_y}")
-    print(f"offsets: {offset_x, offset_y}")
+    # offset_x = start_x - gazebo_start_x
+    # offset_y = start_y - gazebo_start_y
+
+    offset_x = 0
+    offset_y = 0
 
     # offset_x = 0
     # offset_y = 0
 
     # Convert local Gazebo goal to UTM
-    goal_x = args.goal_x + offset_x
-    goal_y = args.goal_y + offset_y
+    # 270 is irl west 
+    # goal_x = args.goal_x + offset_x 
+    # goal_y = args.goal_y + offset_y
+
+    # project both, since raw lon/lat is very granular
+    lon, lat = args.goal_x, args.goal_y
+    goal_proj = pyproj.Proj(proj='utm', zone=16, ellps='WGS84')
+    x, y = goal_proj(lon, lat)
+    goal_x, goal_y = x, y
+
     goal_yaw = math.radians(args.goal_yaw)
     goal_pose = (goal_x, goal_y, goal_yaw)
 
+    print(f"start: {start_x, start_y}")
+    print(f"gazebo: {gazebo_start_x, gazebo_start_y}")
+    print(f"offsets: {offset_x, offset_y}")
+    print(f'goal: {goal_x, goal_y}')
+
     rospy.loginfo("🚀 Planning path from live GPS to local goal...")
     path = hybrid_astar(start_pose, goal_pose)
+
+    # rosrun hybrid_a_star_sim hybrid_astar_rs_node.py --goal_x -88.2360875 --goal_y 40.0928 --goal_yaw 180
+
 
     if path:
         publish_path(path, offset_x, offset_y)

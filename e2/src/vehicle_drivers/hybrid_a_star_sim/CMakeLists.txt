@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   visualization_msgs
   tf
+  filters
 )
 
 catkin_package(
