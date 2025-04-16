@@ -5,6 +5,12 @@ from constants import WALL_RESOLUTION
 """
 Walls class. Just inserts configurations of hardcoded "walls" on the map
 Plotting, etc all done in other functions 
+
+4/12/25 empirical testing seems to work on large spaces where it's just 
+horizontal/vertical walls.
+
+diagonal walls untested
+if car spawns on a wall, that behavior is undefined
 """
 
 class Walls:

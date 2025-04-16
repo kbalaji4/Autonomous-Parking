@@ -153,13 +153,25 @@ def main():
 
     # add walls
     walls = Walls()
-    walls.add_wall(-25, -10, -25, -30, offset_x, offset_y)
-    walls.add_wall(-30, -10, -30, -30, offset_x, offset_y)
-    walls.add_wall(-25, -30, -30, -30, offset_x, offset_y)
+    # nice case
+    # walls.add_wall(-25, -10, -25, -30, offset_x, offset_y)
+    # walls.add_wall(-30, -10, -30, -30, offset_x, offset_y)
+    # walls.add_wall(-25, -30, -30, -30, offset_x, offset_y)
 
+    # bad case if 270, works for 180 somehow lol
     # walls.add_wall(-26, -10, -26, -30, offset_x, offset_y)
     # walls.add_wall(-29, -10, -29, -30, offset_x, offset_y)
     # walls.add_wall(-26, -30, -29, -30, offset_x, offset_y)
+
+    # smaller tail
+    # walls.add_wall(-26, -25, -26, -30, offset_x, offset_y)
+    # walls.add_wall(-29, -25, -29, -30, offset_x, offset_y)
+    # walls.add_wall(-26, -30, -29, -30, offset_x, offset_y)
+
+    # parking spot size, seems to work lol
+    walls.add_wall(-26, -26, -26, -29, offset_x, offset_y)
+    walls.add_wall(-29, -26, -29, -29, offset_x, offset_y)
+    walls.add_wall(-26, -29, -29, -29, offset_x, offset_y)
 
     rospy.loginfo("🚀 Planning path from live GPS to local goal...")
     path = hybrid_astar(start_pose, goal_pose, walls)
