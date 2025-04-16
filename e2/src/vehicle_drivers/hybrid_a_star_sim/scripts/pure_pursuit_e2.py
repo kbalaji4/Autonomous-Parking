@@ -76,9 +76,6 @@ class PurePursuit(object):
         self.speed_sub  = rospy.Subscriber("/pacmod/parsed_tx/vehicle_speed_rpt", VehicleSpeedRpt, self.speed_callback)
         self.speed      = 0.0
 
-        self.olat       = 40.0928563
-        self.olon       = -88.2359994
-
         # read waypoints into the system 
         self.goal       = 0            
         # self.read_waypoints() 
@@ -103,26 +100,26 @@ class PurePursuit(object):
         self.gear_cmd = PacmodCmd()
         self.gear_cmd.ui16_cmd = 2 # SHIFT_NEUTRAL
 
-        # GEM vehilce brake control
+        # GEM vehicle brake control
         self.brake_pub = rospy.Publisher('/pacmod/as_rx/brake_cmd', PacmodCmd, queue_size=1)
         self.brake_cmd = PacmodCmd()
         self.brake_cmd.enable = False
         self.brake_cmd.clear  = True
         self.brake_cmd.ignore = True
 
-        # GEM vechile forward motion control
+        # GEM vehicle forward motion control
         self.accel_pub = rospy.Publisher('/pacmod/as_rx/accel_cmd', PacmodCmd, queue_size=1)
         self.accel_cmd = PacmodCmd()
         self.accel_cmd.enable = False
         self.accel_cmd.clear  = True
         self.accel_cmd.ignore = True
 
-        # GEM vechile turn signal control
+        # GEM vehicle turn signal control
         self.turn_pub = rospy.Publisher('/pacmod/as_rx/turn_cmd', PacmodCmd, queue_size=1)
         self.turn_cmd = PacmodCmd()
         self.turn_cmd.ui16_cmd = 1 # None
 
-        # GEM vechile steering wheel control
+        # GEM vehicle steering wheel control
         self.steer_pub = rospy.Publisher('/pacmod/as_rx/steer_cmd', PositionWithSpeed, queue_size=1)
         self.steer_cmd = PositionWithSpeed()
         self.steer_cmd.angular_position = 0.0 # radians, -: clockwise, +: counter-clockwise
@@ -139,12 +136,12 @@ class PurePursuit(object):
             _, _, yaw = euler_from_quaternion([quat.x, quat.y, quat.z, quat.w])
             print(f"yaw in hybrid a star after euler from quat: {yaw}")
             # raw yaw is like oscillating between pi and negative pi when facing west
-            yaw = (yaw + np.pi) % (2*np.pi) # offset by 180. 
+            # yaw = (yaw + np.pi) % (2*np.pi) # offset by 180. # not sure if this is correct
             # self.path_points_x.append(x)
             # self.path_points_y.append(y)
             self.path_points_lon_x.append(x)
             self.path_points_lat_y.append(y)
-            self.path_points_heading.append(yaw) # yaw is heading? in radians
+            self.path_points_heading.append(yaw) # yaw is in radians
 
         self.dist_arr = np.zeros(len(self.path_points_lon_x))
         rospy.loginfo(f"✅ Received {len(self.path_points_lon_x)} waypoints.")
@@ -168,7 +165,7 @@ class PurePursuit(object):
     def enable_callback(self, msg):
         self.pacmod_enable = msg.data
 
-    def heading_to_yaw(self, heading_curr):
+    def heading_to_yaw(self, heading_curr): # just keeps it between [0, pi]
         if (heading_curr >= 270 and heading_curr < 360):
             yaw_curr = np.radians(450 - heading_curr)
         else:
@@ -202,18 +199,13 @@ class PurePursuit(object):
     #     self.wp_size             = len(self.path_points_lon_x)
     #     self.dist_arr            = np.zeros(self.wp_size)
 
-    def wps_to_local_xy(self, lon_wp, lat_wp):
-        # convert GNSS waypoints into local fixed frame reprented in x and y
-        lon_wp_x, lat_wp_y = axy.ll2xy(lat_wp, lon_wp, self.olat, self.olon)
-        return lon_wp_x, lat_wp_y   
-
     def get_gem_state(self):
 
         # vehicle gnss heading (yaw) in degrees
         # vehicle x, y position in fixed local frame, in meters
         # reference point is located at the center of GNSS antennas
         # local_x_curr, local_y_curr = self.wps_to_local_xy(self.lon, self.lat)
-        local_x_curr, local_y_curr = self.lon, self.lat # pure septentrio to match planner
+        local_x_curr, local_y_curr = self.lon, self.lat # input pure septentrio to match planner
 
         # heading to yaw (degrees to radians)
         # heading is calculated from two GNSS antennas
@@ -287,9 +279,9 @@ class PurePursuit(object):
             self.path_points_lat_y = np.array(self.path_points_lat_y)
 
             curr_x, curr_y, curr_yaw = self.get_gem_state()
-            print(f'currx: {curr_x}')
-            print(f'curry: {curr_y}')
-            print(f'curry aw: {curr_yaw}')
+            print(f'curr_x: {curr_x}')
+            print(f'curr_y: {curr_y}')
+            print(f'curr_yaw: {curr_yaw}')
 
             # finding the distance of each way point from the current position
             for i in range(len(self.path_points_lon_x)):

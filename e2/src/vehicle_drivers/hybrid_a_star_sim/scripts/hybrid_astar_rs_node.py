@@ -142,21 +142,9 @@ def main():
     # start_yaw = math.radians(180) # fix it to face 180 degrees for now
     start_pose = (start_x, start_y, start_yaw)
 
-    # GEM starts at Gazebo: x = -1.5, y = -21
-    gazebo_start_x = STARTX
-    gazebo_start_y = STARTY
-    # gazebo_start_x = GPS_STARTLON
-    # gazebo_start_y = GPS_STARTLAT
-
-    # Offset between GPS UTM and Gazebo's map frame
-    # offset_x = start_x - gazebo_start_x
-    # offset_y = start_y - gazebo_start_y
-
+    # keep it at 0 so the plots work
     offset_x = 0
     offset_y = 0
-
-    # offset_x = 0
-    # offset_y = 0
 
     # Convert local Gazebo goal to UTM
     # 270 is irl west 
@@ -173,8 +161,8 @@ def main():
     goal_pose = (goal_x, goal_y, goal_yaw)
 
     print(f"start: {start_x, start_y}")
-    print(f"gazebo: {gazebo_start_x, gazebo_start_y}")
-    print(f"offsets: {offset_x, offset_y}")
+    # print(f"gazebo: {gazebo_start_x, gazebo_start_y}")
+    # print(f"offsets: {offset_x, offset_y}")
     print(f'goal: {goal_x, goal_y}')
 
     rospy.loginfo("🚀 Planning path from live GPS to local goal...")
