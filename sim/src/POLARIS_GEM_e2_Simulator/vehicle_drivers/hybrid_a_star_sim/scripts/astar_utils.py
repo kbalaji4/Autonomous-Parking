@@ -183,3 +183,84 @@ def plot_path(path, start, goal):
     axes[1].set_title("Path with Waypoints and Orientations")
     plt.tight_layout()
     plt.show()
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Use same grid resolution as in astar_utils.py
+XY_GRID_RESOLUTION = 1.0
+
+def create_example_cost_map(width, height):
+    """
+    Creates an example cost map.
+    Obstacles cells set to a high cost, free cells are 0.
+    """
+    cost_map = np.zeros((width, height))
+    
+    # Example: Create two rectangular obstacles
+    cost_map[10:15, 10:15] = 1e6  # first obstacle
+    cost_map[20:25, 5:10] = 1e6   # second obstacle
+    return cost_map
+
+def plot_test(cost_map, path, start, goal):
+    """
+    Plots the cost map grid (with dark obstacles) and overlays the Hybrid A* trajectory.
+    
+    Arguments:
+        cost_map: 2D numpy array representing the cost of each cell.
+        path: List of (x, y, yaw) tuples for the trajectory.
+        start: Tuple (x, y, yaw) start pose.
+        goal: Tuple (x, y, yaw) goal pose.
+    """
+    cost_map = np.zeros((100, 100))
+    
+    # Example: Create two rectangular obstacles
+    cost_map[10:15, 10:15] = 1e6  # first obstacle
+    cost_map[20:25, 5:10] = 1e6   # second obstacle
+    
+    grid_width, grid_height = cost_map.shape
+    fig, ax = plt.subplots(figsize=(8, 8))
+    # Plot the cost map.
+    # Use 'binary' colormap so that high cost cells appear dark.
+    cax = ax.imshow(cost_map.T, origin='lower', cmap='binary', 
+                    extent=[0, grid_width*XY_GRID_RESOLUTION, 0, grid_height*XY_GRID_RESOLUTION])
+    
+    # Draw gridlines
+    ax.set_xticks(np.arange(0, grid_width*XY_GRID_RESOLUTION+1, XY_GRID_RESOLUTION), minor=True)
+    ax.set_yticks(np.arange(0, grid_height*XY_GRID_RESOLUTION+1, XY_GRID_RESOLUTION), minor=True)
+    ax.grid(which='minor', color='gray', linestyle='-', linewidth=0.5)
+    
+    # Extract x and y from the trajectory states
+    xs = [p[0] for p in path]
+    ys = [p[1] for p in path]
+    yaws = [p[2] for p in path]
+    
+    # the path points
+    ax[0].plot(xs, ys, '-b')
+    ax[0].plot(start[0], start[1], 'og', label='Start') # start and end points
+    ax[0].plot(goal[0], goal[1], 'xr', label='Goal')
+    ax[0].axis("equal")
+    ax[0].grid(True)
+    ax[0].legend()
+    ax[0].set_title("Hybrid A* Path")
+
+    # path points that are orientation instead
+    ax[1].plot(xs, ys, '-b', label="Path")
+    ax[1].quiver(xs, ys, 
+                   np.cos(yaws), np.sin(yaws), 
+                   angles='xy', scale_units='xy', scale=1, color='r', label="Yaw")
+    # plot start and end points?
+    ax[1].quiver(start[0], start[1], 
+                   np.cos(start[2]), np.sin(start[2]), 
+                   angles='xy', scale_units='xy', scale=1, color='b', label="Start")
+    ax[1].quiver(goal[0], goal[1], 
+                   np.cos(goal[2]), np.sin(goal[2]), 
+                   angles='xy', scale_units='xy', scale=1, color='g', label="Goal")
+    
+    ax.legend()
+    ax.set_xlabel("X [m]")
+    ax.set_ylabel("Y [m]")
+    ax.set_title("Hybrid A* Trajectory on Cost Map")
+    
+    plt.colorbar(cax, label="Cost")
+    plt.show()

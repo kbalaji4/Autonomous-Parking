@@ -23,7 +23,7 @@ if scripts_dir not in sys.path:
 print("printing paths in main(): ")
 print(sys.path)
 
-from astar_utils import hybrid_astar, plot_path, plot_path_walls
+from astar_utils import hybrid_astar, plot_path, plot_path_walls, plot_test
 from constants import STARTX, STARTY, STARTYAW
 from walls import Wall, Walls
 
@@ -183,8 +183,10 @@ def main():
 
         # Optional debug plot in local frame
         local_path = [(x - offset_x, y - offset_y, yaw) for x, y, yaw in path]
-        plot_path_walls(local_path, (start_x - offset_x, start_y - offset_y, start_yaw),
-                  (goal_x - offset_x, goal_y - offset_y, goal_yaw), walls)
+        plot_test(local_path, (start_x - offset_x, start_y - offset_y, start_yaw),
+                  (goal_x - offset_x, goal_y - offset_y, goal_yaw))
+        # plot_path_walls(local_path, (start_x - offset_x, start_y - offset_y, start_yaw),
+        #           (goal_x - offset_x, goal_y - offset_y, goal_yaw), walls)
         # plot_path(local_path, (start_x - offset_x, start_y - offset_y, start_yaw),
         #           (goal_x - offset_x, goal_y - offset_y, goal_yaw))
     else:
