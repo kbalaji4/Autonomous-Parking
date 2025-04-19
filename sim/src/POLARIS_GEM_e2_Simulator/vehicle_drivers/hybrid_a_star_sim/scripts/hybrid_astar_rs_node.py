@@ -28,6 +28,7 @@ from constants import STARTX, STARTY, STARTYAW
 from walls import Wall, Walls
 
 
+
 current_utm = None
 current_yaw = None
 
