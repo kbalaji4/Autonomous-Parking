@@ -1,20 +1,20 @@
 import numpy as np
-from cv_bridge import CvBridge
 import cv2
 import torch
 
-def __init__(self):
-    super().__init__('YOLOv5')
-    self.model_path = 'best.pt' 
-    self.model = torch.hub.load('ultralytics/yolov5', 'custom', path=self.model_path)
-    self.model.conf = 0.7  
+model_path = 'sim/src/POLARIS_GEM_e2_Simulator/vehicle_drivers/hybrid_a_star_sim/perception/best.pt'
+model = torch.hub.load('ultralytics/yolov5', 'custom', path=model_path, force_reload=True)
+model.conf = 0.7  
     
-def infer(self,img_path):
+def infer(img_path):
     frame = cv2.imread(img_path)
     frame = cv2.resize(frame, (640, 640))
     try:
-        results = self.model(frame)
+        cv2.imshow('Original Image', frame)
+        cv2.waitKey(1)
+        results  = model(frame)
         detections = results.pandas().xyxy[0].to_dict(orient='records')
+        print(detections)
         if detections:
             for det in detections:
                 xmin, ymin, xmax, ymax = int(det['xmin']), int(det['ymin']), int(det['xmax']), int(det['ymax'])
@@ -26,4 +26,4 @@ def infer(self,img_path):
     except Exception as e:
         pass
 
-infer("img1.jpg")
+infer("sim/src/POLARIS_GEM_e2_Simulator/vehicle_drivers/hybrid_a_star_sim/perception/img1.jpg")
