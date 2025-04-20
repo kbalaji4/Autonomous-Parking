@@ -23,6 +23,7 @@ include_directories(
 
 catkin_install_python(PROGRAMS
   scripts/hybrid_astar_rs_node.py
+  scripts/detection.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
