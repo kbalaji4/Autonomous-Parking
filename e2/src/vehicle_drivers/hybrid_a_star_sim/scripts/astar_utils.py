@@ -3,6 +3,9 @@ import math
 import heapq
 from collections import deque
 from scipy.spatial import distance
+import csv
+import time
+import matplotlib.pyplot as plt
 
 XY_GRID_RESOLUTION = 1.0
 YAW_GRID_RESOLUTION = np.deg2rad(15.0)
@@ -10,7 +13,7 @@ MOVE_STEP_SIZE = 1.0
 # WB = 2.0
 WB = 1.75
 RADIUS = 3.175
-MAX_STEER = np.arctan(WB/RADIUS)
+MAX_STEER = 0.5 #np.arctan(WB/RADIUS)
 N_STEER = 5
 
 def reeds_shepp_path(start, goal, radius):
@@ -105,7 +108,6 @@ def reconstruct_path(goal_node, node_map, goal):
     return list(path)
 
 def plot_path(path, start, goal):
-    import matplotlib.pyplot as plt
     xs = [p[0] for p in path]
     ys = [p[1] for p in path]
     yaws = [p[2] for p in path]
@@ -140,3 +142,20 @@ def plot_path(path, start, goal):
     axes[1].set_title("Path with Waypoints and Orientations")
     plt.tight_layout()
     plt.show()
+
+def save_path_to_csv(path, start, goal, filename=None):
+    """Save path, start, and goal points to a CSV file"""
+    if filename is None:
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        filename = f"planner_path_data_{timestamp}.csv"
+    
+    with open(filename, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['type', 'x', 'y', 'yaw'])
+        writer.writerow(['start', start[0], start[1], start[2]])
+        writer.writerow(['goal', goal[0], goal[1], goal[2]])
+        for x, y, yaw in path:
+            writer.writerow(['path', x, y, yaw])
+    
+    return filename
+

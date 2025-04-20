@@ -58,6 +58,8 @@ class PurePursuit(object):
         self.look_ahead = 10 # was 4 before
         self.wheelbase  = 1.75 # meters
         self.offset     = 0.46 # meters
+
+        self.dist_arr = np.zeros(1)
         
         rospy.Subscriber("/waypoints", Path, self.path_callback)
 
@@ -145,6 +147,7 @@ class PurePursuit(object):
             self.path_points_lon_x.append(x)
             self.path_points_lat_y.append(y)
             self.path_points_heading.append(yaw) # yaw is heading? in radians
+            self.dist_arr = np.zeros(len(self.path_points_lon_x))
 
         self.dist_arr = np.zeros(len(self.path_points_lon_x))
         rospy.loginfo(f"✅ Received {len(self.path_points_lon_x)} waypoints.")
@@ -242,6 +245,7 @@ class PurePursuit(object):
     # computes the Euclidean distance between two 2D points
     def dist(self, p1, p2):
         return round(np.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2), 3)
+    
 
     def start_pp(self):
         
@@ -283,8 +287,8 @@ class PurePursuit(object):
                     self.gem_enable = True
 
 
-            self.path_points_lon_x = np.array(self.path_points_lon_x)
-            self.path_points_lat_y = np.array(self.path_points_lat_y)
+            self.path_points_x = np.array(self.path_points_lon_x)
+            self.path_points_y = np.array(self.path_points_lat_y)
 
             curr_x, curr_y, curr_yaw = self.get_gem_state()
             print(f'currx: {curr_x}')
@@ -292,43 +296,53 @@ class PurePursuit(object):
             print(f'curry aw: {curr_yaw}')
 
             # finding the distance of each way point from the current position
-            for i in range(len(self.path_points_lon_x)):
-                self.dist_arr[i] = self.dist((self.path_points_lon_x[i], self.path_points_lat_y[i]), (curr_x, curr_y))
-            # print(f'dist arr: {self.dist_arr}')
-            # finding those points which are less than the look ahead distance (will be behind and ahead of the vehicle)
-            goal_arr = np.where( (self.dist_arr < self.look_ahead + 0.3) & (self.dist_arr > self.look_ahead - 0.3) )[0]
+            if len(self.path_points_x) < 2:
+                rospy.logwarn("⏳ Waiting for waypoints...")
+                self.rate.sleep()
+                continue
 
-            # finding the goal point which is the last in the set of points less than the lookahead distance
+            for i in range(len(self.path_points_x)):
+                self.dist_arr[i] = self.dist((self.path_points_x[i], self.path_points_y[i]), (curr_x, curr_y))
+
+            goal_arr = np.where((self.dist_arr < self.look_ahead + 0.3) & (self.dist_arr > self.look_ahead - 0.3))[0]
+
+            found = False
             for idx in goal_arr:
-                v1 = [self.path_points_lon_x[idx]-curr_x , self.path_points_lat_y[idx]-curr_y]
+                v1 = [self.path_points_x[idx]-curr_x , self.path_points_y[idx]-curr_y]
                 v2 = [np.cos(curr_yaw), np.sin(curr_yaw)]
-                temp_angle = self.find_angle(v1,v2)
-                # find correct look-ahead point by using heading information
-                if abs(temp_angle) < np.pi/2:
+                temp_angle = self.find_angle(v1, v2)
+                print(temp_angle)
+                if abs(temp_angle) < np.pi:
                     self.goal = idx
+                    found = True
                     break
 
-            # finding the distance between the goal point and the vehicle
-            # true look-ahead distance between a waypoint and current position
+            if not found:
+                rospy.logwarn("⚠️ No valid goal point ahead.")
+                self.rate.sleep()
+                continue
+
             L = self.dist_arr[self.goal]
 
-            # find the curvature and the angle 
-            alpha = self.heading_to_yaw(self.path_points_heading[self.goal]) - curr_yaw
-            print(f"{curr_yaw} {alpha}")
+            gvcx = self.path_points_x[self.goal] - curr_x
+            gvcy = self.path_points_y[self.goal] - curr_y
+            goal_x_veh_coord = gvcx*np.cos(curr_yaw) + gvcy*np.sin(curr_yaw)
+            goal_y_veh_coord = gvcy*np.cos(curr_yaw) - gvcx*np.sin(curr_yaw)
 
-            # ----------------- tuning this part as needed -----------------
-            k       = 0.41 
-            angle_i = math.atan((k * 2 * self.wheelbase * math.sin(alpha)) / L) 
-            angle   = angle_i*2
+            alpha = self.path_points_heading[self.goal] - curr_yaw
+            k = 0.285
+            angle_i = math.atan((2 * k * self.wheelbase * math.sin(alpha)) / L) 
+            angle = angle_i * 2
+            angle = round(np.clip(angle, -0.61, 0.61), 3)
             # ----------------- tuning this part as needed -----------------
 
-            f_delta = round(np.clip(angle, -0.5, 0.5), 3)
+            f_delta = round(np.clip(angle, -0.6, 0.6), 3)
 
             f_delta_deg = np.degrees(f_delta)
 
             # steering_angle in degrees
             steering_angle = np.clip(self.front2steer(f_delta_deg), -90, 90)
-           
+            print(f"{angle} {f_delta_deg} {steering_angle}")
 
             if(self.gem_enable == True):
                 print("Current index: " + str(self.goal))
@@ -365,8 +379,70 @@ class PurePursuit(object):
             self.rate.sleep()
 
 
-def pure_pursuit():
 
+
+# def start_pp(self):
+#         while not rospy.is_shutdown():
+
+#             if len(self.path_points_x) < 2:
+#                 rospy.logwarn("⏳ Waiting for waypoints...")
+#                 self.rate.sleep()
+#                 continue
+
+#             curr_x, curr_y, curr_yaw = self.get_gem_pose()
+
+#             self.path_points_x = np.array(self.path_points_x)
+#             self.path_points_y = np.array(self.path_points_y)
+
+#             for i in range(len(self.path_points_x)):
+#                 self.dist_arr[i] = self.dist((self.path_points_x[i], self.path_points_y[i]), (curr_x, curr_y))
+
+#             goal_arr = np.where((self.dist_arr < self.look_ahead + 0.3) & (self.dist_arr > self.look_ahead - 0.3))[0]
+
+            
+#             print(goal_arr)
+#             found = False
+#             for idx in goal_arr:
+#                 v1 = [self.path_points_x[idx]-curr_x , self.path_points_y[idx]-curr_y]
+#                 v2 = [np.cos(curr_yaw), np.sin(curr_yaw)]
+#                 temp_angle = find_angle(v1, v2)
+#                 print(temp_angle)
+#                 if abs(temp_angle) < np.pi/2:
+#                     self.goal = idx
+#                     found = True
+#                     break
+
+#             if not found:
+#                 rospy.logwarn("⚠️ No valid goal point ahead.")
+#                 self.rate.sleep()
+#                 continue
+
+#             L = self.dist_arr[self.goal]
+
+#             gvcx = self.path_points_x[self.goal] - curr_x
+#             gvcy = self.path_points_y[self.goal] - curr_y
+#             goal_x_veh_coord = gvcx*np.cos(curr_yaw) + gvcy*np.sin(curr_yaw)
+#             goal_y_veh_coord = gvcy*np.cos(curr_yaw) - gvcx*np.sin(curr_yaw)
+
+#             alpha = self.path_points_yaw[self.goal] - curr_yaw
+#             k = 0.285
+#             angle_i = math.atan((2 * k * self.wheelbase * math.sin(alpha)) / L) 
+#             angle = angle_i * 2
+#             angle = round(np.clip(angle, -0.61, 0.61), 3)
+
+#             ct_error = round(np.sin(alpha) * L, 3)
+
+#             rospy.loginfo(f"[PP] Crosstrack Error: {ct_error:.3f} | Steering: {math.degrees(angle):.1f}° | Goal: {self.goal}")
+
+#             self.ackermann_msg.speed = 2.8
+#             self.ackermann_msg.steering_angle = angle
+#             self.ackermann_pub.publish(self.ackermann_msg)
+
+#             self.rate.sleep()
+#             break
+
+
+def pure_pursuit():
     rospy.init_node('gnss_pp_node', anonymous=True)
     pp = PurePursuit()
 
@@ -374,7 +450,6 @@ def pure_pursuit():
         pp.start_pp()
     except rospy.ROSInterruptException:
         pass
-
 
 if __name__ == '__main__':
     pure_pursuit()
