@@ -35,5 +35,4 @@
   <exec_depend>ackermann_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>  
   <exec_depend>visualization_msgs</exec_depend>
-  <exec_depend>pyproj</exec_depend>
 </package>

@@ -32,7 +32,7 @@ import rospy
 import pyproj
 
 # GEM Sensor Headers
-from std_msgs.msg import String, Bool, Float32, Float64
+from std_msgs.msg import String, Bool, Float32, Float64,  Int64
 from sensor_msgs.msg import NavSatFix
 from novatel_gps_msgs.msg import NovatelPosition, NovatelXYZ, Inspva
 from septentrio_gnss_driver.msg import INSNavGeod # they do septentrio
@@ -44,6 +44,8 @@ from pacmod_msgs.msg import PositionWithSpeed, PacmodCmd, SystemRptFloat, Vehicl
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
 from tf.transformations import euler_from_quaternion
+from pid_controllers import PID
+
 
 class PurePursuit(object):
     
@@ -55,7 +57,7 @@ class PurePursuit(object):
 
         self.rate       = rospy.Rate(10)
 
-        self.look_ahead = 10 # was 4 before
+        self.look_ahead = 4 # was 4 before
         self.wheelbase  = 1.75 # meters
         self.offset     = 0.46 # meters
         
@@ -80,12 +82,15 @@ class PurePursuit(object):
         self.olon       = -88.2359994
 
         # read waypoints into the system 
-        self.goal       = 0            
+        self.goal       = 0      
+        self.goal_pub = rospy.Publisher('/current_goal_idx', Int64, queue_size=10)      
         # self.read_waypoints() 
 
         self.desired_speed = 1.5  # m/s, reference speed
         self.max_accel     = 0.48 # % of acceleration
-        self.pid_speed     = PID(0.5, 0.0, 0.1, wg=20)
+        self.pid_speed     = PID(1, 0.0, 0.1, wg=20)
+        self.pid_steer     = PID(kp=-5, ki=0.0, kd=0.005)      # Steering controller
+
         self.speed_filter  = OnlineFilter(1.2, 30, 4)
 
         # -------------------- PACMod setup --------------------
@@ -218,7 +223,7 @@ class PurePursuit(object):
         # heading to yaw (degrees to radians)
         # heading is calculated from two GNSS antennas
         # curr_yaw = self.heading_to_yaw(self.heading) 
-        curr_yaw = self.heading
+        curr_yaw = (self.heading + 90) % 360
 
         # reference point is located at the center of rear axle
         # curr_x = local_x_curr - self.offset * np.cos(curr_yaw)
@@ -307,13 +312,15 @@ class PurePursuit(object):
                 if abs(temp_angle) < np.pi/2:
                     self.goal = idx
                     break
+            print(self.goal)
+            self.goal_pub.publish(Int64(self.goal))
 
             # finding the distance between the goal point and the vehicle
             # true look-ahead distance between a waypoint and current position
             L = self.dist_arr[self.goal]
 
             # find the curvature and the angle 
-            alpha = self.heading_to_yaw(self.path_points_heading[self.goal]) - curr_yaw
+            alpha = self.path_points_heading[self.goal] - curr_yaw
             print(f"{curr_yaw} {alpha}")
 
             # ----------------- tuning this part as needed -----------------
@@ -329,11 +336,10 @@ class PurePursuit(object):
             # steering_angle in degrees
             steering_angle = np.clip(self.front2steer(f_delta_deg), -90, 90)
            
-
             if(self.gem_enable == True):
                 print("Current index: " + str(self.goal))
                 print("Forward velocity: " + str(self.speed))
-                ct_error = round(np.sin(alpha) * L, 3)
+                ct_error = round(np.sin(np.radians(alpha)) * L, 7)
                 print("Crosstrack Error: " + str(ct_error))
                 print("Front steering angle: " + str(np.degrees(f_delta)) + " degrees")
                 print("Steering wheel angle: " + str(steering_angle) + " degrees" )
@@ -357,7 +363,8 @@ class PurePursuit(object):
                 self.turn_cmd.ui16_cmd = 0 # turn right
 
             self.accel_cmd.f64_cmd = output_accel
-            self.steer_cmd.angular_position = np.radians(steering_angle)
+            # self.steer_cmd.angular_position = np.radians(steering_angle)
+            self.steer_cmd.angular_position = np.clip(self.pid_steer.get_control(current_time, ct_error, fwd=0.0), -90, 90)
             self.accel_pub.publish(self.accel_cmd)
             self.steer_pub.publish(self.steer_cmd)
             self.turn_pub.publish(self.turn_cmd)

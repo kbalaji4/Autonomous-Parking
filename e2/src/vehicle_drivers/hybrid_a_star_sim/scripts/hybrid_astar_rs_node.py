@@ -9,7 +9,11 @@ from septentrio_gnss_driver.msg import INSNavGeod
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped
 from visualization_msgs.msg import Marker, MarkerArray
-from tf.transformations import euler_from_quaternion
+from tf.transformations import euler_from_quaternion, quaternion_from_euler
+from threading import Lock
+from std_msgs.msg import Int64
+import time
+import csv
 import pyproj
 import argparse
 
@@ -24,12 +28,18 @@ if scripts_dir not in sys.path:
 print("printing paths in main(): ")
 print(sys.path)
 
-from astar_utils import hybrid_astar, plot_path
+from astar_utils import hybrid_astar, plot_path, save_path_to_csv
 from constants import STARTX, STARTY, STARTYAW, GPS_STARTLON, GPS_STARTLAT 
 
 
 current_utm = None
 current_yaw = None
+
+vehicle_positions = []
+vehicle_positions_lock = Lock()
+csv_writer = None
+csv_file = None
+current_goal_idx = 0
 
 def gps_callback(msg):
     global current_utm
@@ -50,6 +60,14 @@ def ins_callback(msg):
     global current_yaw
     current_yaw = heading_to_yaw(round(msg.heading, 6))
     # pls be radians and modded
+
+def goal_callback(msg):
+     """ 
+     get goal_idx
+     """
+     global current_goal_idx
+     print(f"goal_idx: {msg.data}")
+     current_goal_idx = msg.data
 
 def heading_to_yaw(heading_curr):
     if (heading_curr >= 270 and heading_curr < 360):
@@ -72,10 +90,13 @@ def publish_path(path_points, offset_x, offset_y):
         pose.pose.position.x = x - offset_x
         pose.pose.position.y = y - offset_y
         pose.pose.position.z = 0.0
-        pose.pose.orientation.x = 0.0
-        pose.pose.orientation.y = 0.0
-        pose.pose.orientation.z = math.sin(yaw / 2.0)
-        pose.pose.orientation.w = math.cos(yaw / 2.0)
+        pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w  = quaternion_from_euler(0.0, 0.0, yaw)
+        print(euler_from_quaternion([pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w]))
+        print(yaw)
+        # pose.pose.orientation.x = 0.0
+        # pose.pose.orientation.y = 0.0
+        # pose.pose.orientation.z = math.sin(yaw / 2.0)
+        # pose.pose.orientation.w = math.cos(yaw / 2.0)
         path_msg.poses.append(pose)
 
     pub.publish(path_msg)
@@ -119,6 +140,31 @@ def wait_for_pose():
     while not rospy.is_shutdown() and (current_utm is None or current_yaw is None):
         rospy.sleep(0.1)
 
+def save_vehicle_position():
+    global current_utm, current_yaw, vehicle_positions, csv_writer, current_goal_idx
+    if current_utm is not None and current_yaw is not None:
+        with vehicle_positions_lock:
+            position = [time.time(), current_utm[0], current_utm[1], current_yaw,  current_goal_idx]
+            vehicle_positions.append(position)
+            if csv_writer:
+                csv_writer.writerow(['actual'] + position)
+
+def setup_vehicle_tracking():
+    global csv_writer, csv_file
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    filename = f"vehicle_trajectory_{timestamp}.csv"
+    csv_file = open(filename, 'w', newline='')
+    csv_writer = csv.writer(csv_file)
+    csv_writer.writerow(['type', 'timestamp', 'x', 'y', 'yaw',  'target_waypoint_idx'])
+    
+    # Start position tracking timer
+    rospy.Timer(rospy.Duration(0.1), lambda _: save_vehicle_position())
+
+def cleanup_vehicle_tracking():
+    global csv_file
+    if csv_file:
+        csv_file.close()
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--goal_x", type=float, required=True, help="Goal X in Gazebo map frame")
@@ -131,6 +177,7 @@ def main():
     rospy.Subscriber("/septentrio_gnss/navsatfix", NavSatFix, gps_callback)
     # rospy.Subscriber("/septentrio_gnss/imu", Imu, imu_callback)
     rospy.Subscriber("/septentrio_gnss/insnavgeod", INSNavGeod, ins_callback)
+    rospy.Subscriber("/current_goal_idx", Int64, goal_callback)
 
     rospy.loginfo("⌛ Waiting for GPS and IMU...")
     wait_for_pose()
@@ -142,9 +189,21 @@ def main():
     # start_yaw = math.radians(180) # fix it to face 180 degrees for now
     start_pose = (start_x, start_y, start_yaw)
 
-    # keep it at 0 so the plots work
+    # GEM starts at Gazebo: x = -1.5, y = -21
+    gazebo_start_x = STARTX
+    gazebo_start_y = STARTY
+    # gazebo_start_x = GPS_STARTLON
+    # gazebo_start_y = GPS_STARTLAT
+
+    # Offset between GPS UTM and Gazebo's map frame
+    # offset_x = start_x - gazebo_start_x
+    # offset_y = start_y - gazebo_start_y
+
     offset_x = 0
     offset_y = 0
+
+    # offset_x = 0
+    # offset_y = 0
 
     # Convert local Gazebo goal to UTM
     # 270 is irl west 
@@ -161,30 +220,38 @@ def main():
     goal_pose = (goal_x, goal_y, goal_yaw)
 
     print(f"start: {start_x, start_y}")
-    # print(f"gazebo: {gazebo_start_x, gazebo_start_y}")
-    # print(f"offsets: {offset_x, offset_y}")
+    print(f"gazebo: {gazebo_start_x, gazebo_start_y}")
+    print(f"offsets: {offset_x, offset_y}")
     print(f'goal: {goal_x, goal_y}')
 
-    rospy.loginfo("🚀 Planning path from live GPS to local goal...")
-    path = hybrid_astar(start_pose, goal_pose)
+    try:
+        setup_vehicle_tracking()
 
-    # rosrun hybrid_a_star_sim hybrid_astar_rs_node.py --goal_x -88.2360875 --goal_y 40.0928 --goal_yaw 180
+        rospy.loginfo("🚀 Planning path from live GPS to local goal...")
+        path = hybrid_astar(start_pose, goal_pose)
 
+        # rosrun hybrid_a_star_sim hybrid_astar_rs_node.py --goal_x -88.2360875 --goal_y 40.0928 --goal_yaw 180
 
-    if path:
-        publish_path(path, offset_x, offset_y)
+        if path:
+            publish_path(path, offset_x, offset_y)
 
-        # publish_path_markers(path, offset_x, offset_y) # off for now
+            # publish_path_markers(path, offset_x, offset_y) # off for now
 
-        # Optional debug plot in local frame
-        local_path = [(x - offset_x, y - offset_y, yaw) for x, y, yaw in path]
-        plot_path(local_path, (start_x - offset_x, start_y - offset_y, start_yaw),
-                  (goal_x - offset_x, goal_y - offset_y, goal_yaw))
-    else:
-        rospy.logerr("❌ Path planning failed.")
+            # Optional debug plot in local frame
+            local_path = [(x - offset_x, y - offset_y, yaw) for x, y, yaw in path]
+            save_path_to_csv(local_path, (start_x - offset_x, start_y - offset_y, start_yaw),
+                    (goal_x - offset_x, goal_y - offset_y, goal_yaw))
+            plot_path(local_path, (start_x - offset_x, start_y - offset_y, start_yaw),
+                    (goal_x - offset_x, goal_y - offset_y, goal_yaw))
+        else:
+            rospy.logerr("❌ Path planning failed.")
+        rospy.spin()
+    finally:
+        cleanup_vehicle_tracking()
 
 if __name__ == "__main__":
     try:
         main()
     except rospy.ROSInterruptException:
+        cleanup_vehicle_tracking()
         pass
