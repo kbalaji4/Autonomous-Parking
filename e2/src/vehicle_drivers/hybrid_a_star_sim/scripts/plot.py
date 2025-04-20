@@ -101,8 +101,20 @@ def plot_from_csv(planned_path_file, actual_path_file):
     plt.show()
 
 
-# if __name__ == "main":
-    # change these
-planned_path_file = "/home/gem/bkkw0/e2/planner_path_data_20250419-134535.csv"
-actual_path_file = "/home/gem/bkkw0/e2/vehicle_trajectory_20250419-134532.csv"
+# base_dir = "/home/gem/bkkw0/e2/"
+# planned_path_file_base = "planner_path_data_"
+# planned_path_file_name = "20250419-134535.csv"
+
+# actual_path_file_base = "vehicle_trajectory_"
+# actual_path_file_name = "20250419-134532.csv"
+
+# planned_path_file = base_dir + planned_path_file_base + planned_path_file_name
+# actual_path_file = base_dir + actual_path_file_base + actual_path_file_name
+
+planned_path_file = "planner_path_data_20250419-135711.csv"
+actual_path_file = "vehicle_trajectory_20250419-135708.csv"
+
+planned_path_file = "planner_path_data_20250419-135545.csv"
+actual_path_file = "vehicle_trajectory_20250419-135542.csv"
+
 plot_from_csv(planned_path_file, actual_path_file)

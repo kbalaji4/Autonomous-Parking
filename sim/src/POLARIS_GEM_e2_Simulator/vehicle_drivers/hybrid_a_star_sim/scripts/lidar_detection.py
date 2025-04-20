@@ -59,12 +59,13 @@ def pointcloud_callback(msg):
         if not points:
             return
         points = np.array(points)
+        print(f"Original points: {points.shape}")
 
         filtered_points = filter_points(points)
-        # print(f"Filtered points: {filtered_points.shape}")
+        print(f"Filtered points: {filtered_points.shape}")
 
         downsampled_points = downsample_points(filtered_points)
-        # print(f"Downsampled points: {downsampled_points.shape}")
+        print(f"Downsampled points: {downsampled_points.shape}")
 
         if len(downsampled_points) == 0:
             rospy.loginfo("no points after downsampling")
