@@ -189,6 +189,7 @@ class PurePursuit(object):
             x = pose.pose.position.x
             y = pose.pose.position.y
             quat = pose.pose.orientation
+            print(pose.pose)
             x, y = self.wps_to_local_xy(x, y)
             _, _, yaw = euler_from_quaternion([x, y, quat.z, quat.w])
             print("Pose " + str(i) + "-- pos x: " + str(x) + " pos y: " + str(y) + " quat: " + str(quat) + " yaw: " + str(yaw))
