@@ -207,7 +207,7 @@ class PurePursuit(object):
             self.path_points_heading.append(yaw) # yaw is heading? in radians
             i += 1
 
-        self.dist_arr = np.zeros(len(self.path_points_lon_x))
+        
         rospy.loginfo(f"✅ Received {len(self.path_points_lon_x)} waypoints.")
 
     def wps_to_local_xy(self, lon_wp, lat_wp):
@@ -301,7 +301,7 @@ class PurePursuit(object):
             print(f'curr yaw: {curr_yaw}')
 
             
-
+            self.dist_arr = np.zeros(len(self.path_points_lon_x))
             # finding the distance of each way point from the current position
             for i in range(len(self.path_points_lon_x)):
                 self.dist_arr[i] = self.dist((self.path_points_lon_x[i], self.path_points_lat_y[i]), (curr_x, curr_y))
@@ -309,12 +309,14 @@ class PurePursuit(object):
             # finding those points which are less than the look ahead distance (will be behind and ahead of the vehicle)
             goal_arr = np.where( (self.dist_arr < self.look_ahead + 0.3) & (self.dist_arr > self.look_ahead - 0.3) )[0]
 
+            print("goal array: " + str(goal_arr))
+
             # finding the goal point which is the last in the set of points less than the lookahead distance
             for idx in goal_arr:
                 v1 = [self.path_points_lon_x[idx]-curr_x , self.path_points_lat_y[idx]-curr_y]
                 v2 = [np.cos(curr_yaw), np.sin(curr_yaw)]
                 temp_angle = self.find_angle(v1,v2)
-                print("temp angle: " + str(temp_angle))
+                # print("temp angle: " + str(temp_angle))
                 # find correct look-ahead point by using heading information
                 if abs(temp_angle) < np.pi/2:
                     self.goal = idx
@@ -326,7 +328,7 @@ class PurePursuit(object):
 
             # find the curvature and the angle 
             alpha = self.heading_to_yaw(self.path_points_heading[self.goal]) - curr_yaw
-            print(f"{curr_yaw} {alpha}")
+            # print(f"{curr_yaw} {alpha}")
 
             # ----------------- tuning this part as needed -----------------
             k       = 0.41 
