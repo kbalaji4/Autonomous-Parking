@@ -306,7 +306,7 @@ class PurePursuit(object):
             for i in range(len(self.path_points_x)):
              
                 self.dist_arr[i] = self.dist((self.path_points_x[i], self.path_points_y[i]), (curr_x, curr_y))
-            self.look_ahead = max(4.0, self.speed * 2.5)
+            self.look_ahead = max(10.0, self.speed * 2.5)
             goal_arr = np.where((self.dist_arr < self.look_ahead + 0.3) & (self.dist_arr > self.look_ahead - 0.3))[0]
 
             found = False
@@ -322,10 +322,10 @@ class PurePursuit(object):
 
             if not found:
                 rospy.logwarn("⚠️ No valid goal point ahead. Slowing Down")
-                self.accel_cmd.f64_cmd = 0.1
-                self.steer_cmd.angular_position = 0.0
-                self.accel_pub.publish(self.accel_cmd)
-                self.steer_pub.publish(self.steer_cmd)
+                # self.accel_cmd.f64_cmd = 0.1
+                # self.steer_cmd.angular_position = 0.0
+                # self.accel_pub.publish(self.accel_cmd)
+                # self.steer_pub.publish(self.steer_cmd)
                 self.rate.sleep()
                 continue
 
@@ -348,7 +348,7 @@ class PurePursuit(object):
             f_delta_deg = np.degrees(f_delta)
 
             # steering_angle in degrees
-            steering_angle = np.clip(self.front2steer(f_delta_deg), -90, 90)
+            steering_angle = np.clip(self.front2steer(f_delta_deg), -30, 30)
             print(f"{angle} {f_delta_deg} {steering_angle}")
 
             if(self.gem_enable == True):

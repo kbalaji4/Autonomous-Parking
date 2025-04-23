@@ -30,45 +30,31 @@ from pid_controllers import PID
 import alvinxy.alvinxy as axy # Import AlvinXY transformation module
 import rospy
 import pyproj
+from tf.transformations import euler_from_quaternion
+
 
 # GEM Sensor Headers
-from std_msgs.msg import String, Bool, Float32, Float64,  Int64
-from sensor_msgs.msg import NavSatFix
+from std_msgs.msg import String, Bool, Float32, Float64
+from nav_msgs.msg import Path
 from novatel_gps_msgs.msg import NovatelPosition, NovatelXYZ, Inspva
-from septentrio_gnss_driver.msg import INSNavGeod # they do septentrio
 
 # GEM PACMod Headers
 from pacmod_msgs.msg import PositionWithSpeed, PacmodCmd, SystemRptFloat, VehicleSpeedRpt
-
-
-from geometry_msgs.msg import PoseStamped
-from nav_msgs.msg import Path
-from tf.transformations import euler_from_quaternion
-from pid_controllers import PID
 
 
 class PurePursuit(object):
     
     def __init__(self):
 
-        self.path_points_lon_x = []
-        self.path_points_lat_y = []
-        self.path_points_heading = []
-
         self.rate       = rospy.Rate(10)
 
-        self.look_ahead = 4 # was 4 before
+        self.look_ahead = 4
         self.wheelbase  = 1.75 # meters
         self.offset     = 0.46 # meters
-        
+
         rospy.Subscriber("/waypoints", Path, self.path_callback)
 
-        # don't need novatel no more
-        # self.gnss_sub_old   = rospy.Subscriber("/novatel/inspva", Inspva, self.inspva_callback)
-
-        # we replaced novatel hardware with septentrio hardware on e2
-        self.gnss_sub   = rospy.Subscriber("/septentrio_gnss/navsatfix", NavSatFix, self.gnss_callback)
-        self.ins_sub    = rospy.Subscriber("/septentrio_gnss/insnavgeod", INSNavGeod, self.ins_callback)
+        self.gnss_sub   = rospy.Subscriber("/novatel/inspva", Inspva, self.inspva_callback)
         self.lat        = 0.0
         self.lon        = 0.0
         self.heading    = 0.0
@@ -82,15 +68,15 @@ class PurePursuit(object):
         self.olon       = -88.2359994
 
         # read waypoints into the system 
-        self.goal       = 0      
-        self.goal_pub = rospy.Publisher('/current_goal_idx', Int64, queue_size=10)      
+        self.goal       = 0            
         # self.read_waypoints() 
+        self.path_points_lon_x = []
+        self.path_points_lat_y = []
+        self.path_points_heading = []
 
         self.desired_speed = 1.5  # m/s, reference speed
         self.max_accel     = 0.48 # % of acceleration
-        self.pid_speed     = PID(1, 0.0, 0.1, wg=20)
-        self.pid_steer     = PID(kp=-0.05, ki=0.0, kd=0)      # Steering controller
-
+        self.pid_speed     = PID(0.5, 0.0, 0.1, wg=20)
         self.speed_filter  = OnlineFilter(1.2, 30, 4)
 
         # -------------------- PACMod setup --------------------
@@ -134,44 +120,38 @@ class PurePursuit(object):
         self.steer_cmd.angular_velocity_limit = 2.0 # radians/second
 
 
-    def path_callback(self, msg):
-        # self.path_points_yaw = []
-
-        for pose in msg.poses:
-            x = pose.pose.position.x
-            y = pose.pose.position.y
-            quat = pose.pose.orientation
-            _, _, yaw = euler_from_quaternion([quat.x, quat.y, quat.z, quat.w])
-            print(f"yaw in hybrid a star after euler from quat: {yaw}")
-            # raw yaw is like oscillating between pi and negative pi when facing west
-            yaw = (yaw + np.pi) % (2*np.pi) # offset by 180. 
-            # self.path_points_x.append(x)
-            # self.path_points_y.append(y)
-            self.path_points_lon_x.append(x)
-            self.path_points_lat_y.append(y)
-            self.path_points_heading.append(yaw) # yaw is heading? in radians
-
-        self.dist_arr = np.zeros(len(self.path_points_lon_x))
-        rospy.loginfo(f"✅ Received {len(self.path_points_lon_x)} waypoints.")
-
     def inspva_callback(self, inspva_msg):
         self.lat     = inspva_msg.latitude  # latitude
         self.lon     = inspva_msg.longitude # longitude
         self.heading = inspva_msg.azimuth   # heading in degrees
-    
-    def ins_callback(self, msg):
-        self.heading = round(msg.heading, 6)
-    
-    def gnss_callback(self, msg):
-        self.lat = round(msg.latitude, 6)
-        self.lon = round(msg.longitude, 6)
-
 
     def speed_callback(self, msg):
         self.speed = round(msg.vehicle_speed, 3) # forward velocity in m/s
 
     def enable_callback(self, msg):
         self.pacmod_enable = msg.data
+
+    def path_callback(self, msg):
+        # self.path_points_yaw = []
+        i = 0
+        for pose in msg.poses:
+            x = pose.pose.position.x
+            y = pose.pose.position.y
+            quat = pose.pose.orientation
+            print(pose.pose)
+            goal_proj = pyproj.Proj(proj='utm', zone=16, ellps='WGS84')
+            x,y = goal_proj(x, y, inverse=True)
+            x,y = self.wps_to_local_xy(x, y)
+            _, _, yaw = euler_from_quaternion([x, y, quat.z, quat.w])
+            yaw = np.degrees(yaw)
+            print("Pose " + str(i) + "-- pos x: " + str(x) + " pos y: " + str(y) + " quat: " + str(quat) + " yaw: " + str(yaw))
+            
+            self.path_points_lon_x.append(x)
+            self.path_points_lat_y.append(y)
+            self.path_points_heading.append(yaw) # yaw is heading? in radians
+            i += 1
+
+        rospy.loginfo(f"✅ Received {len(self.path_points_lon_x)} waypoints.")
 
     def heading_to_yaw(self, heading_curr):
         if (heading_curr >= 270 and heading_curr < 360):
@@ -194,18 +174,18 @@ class PurePursuit(object):
             steer_angle = 0.0
         return steer_angle
 
-    # def read_waypoints(self):
-    #     # read recorded GPS lat, lon, heading
-    #     dirname  = os.path.dirname(__file__)
-    #     filename = os.path.join(dirname, '../waypoints/xyhead_demo_pp.csv')
-    #     with open(filename) as f:
-    #         path_points = [tuple(line) for line in csv.reader(f)]
-    #     # x towards East and y towards North
-    #     self.path_points_lon_x   = [float(point[0]) for point in path_points] # longitude
-    #     self.path_points_lat_y   = [float(point[1]) for point in path_points] # latitude
-    #     self.path_points_heading = [float(point[2]) for point in path_points] # heading
-    #     self.wp_size             = len(self.path_points_lon_x)
-    #     self.dist_arr            = np.zeros(self.wp_size)
+    def read_waypoints(self):
+        # read recorded GPS lat, lon, heading
+        dirname  = os.path.dirname(__file__)
+        filename = os.path.join(dirname, '../waypoints/xyhead_demo_pp.csv')
+        with open(filename) as f:
+            path_points = [tuple(line) for line in csv.reader(f)]
+        # x towards East and y towards North
+        self.path_points_lon_x   = [float(point[0]) for point in path_points] # longitude
+        self.path_points_lat_y   = [float(point[1]) for point in path_points] # latitude
+        self.path_points_heading = [float(point[2]) for point in path_points] # heading
+        self.wp_size             = len(self.path_points_lon_x)
+        self.dist_arr            = np.zeros(self.wp_size)
 
     def wps_to_local_xy(self, lon_wp, lat_wp):
         # convert GNSS waypoints into local fixed frame reprented in x and y
@@ -217,23 +197,15 @@ class PurePursuit(object):
         # vehicle gnss heading (yaw) in degrees
         # vehicle x, y position in fixed local frame, in meters
         # reference point is located at the center of GNSS antennas
-        # local_x_curr, local_y_curr = self.wps_to_local_xy(self.lon, self.lat)
-        local_x_curr, local_y_curr = self.lon, self.lat # pure septentrio to match planner
+        local_x_curr, local_y_curr = self.wps_to_local_xy(self.lon, self.lat)
 
         # heading to yaw (degrees to radians)
         # heading is calculated from two GNSS antennas
-        # curr_yaw = self.heading_to_yaw(self.heading) 
-        curr_yaw = (self.heading + 90) % 360
+        curr_yaw = self.heading_to_yaw(self.heading) 
 
         # reference point is located at the center of rear axle
-        # curr_x = local_x_curr - self.offset * np.cos(curr_yaw)
-        # curr_y = local_y_curr - self.offset * np.sin(curr_yaw)
-
-        # project from long/lat to utm since planner uses utm
-        goal_proj = pyproj.Proj(proj='utm', zone=16, ellps='WGS84')
-        # print(f"b4 proj curr_x: {local_x_curr}")
-        # print(f"b4 proj curr_y: {local_y_curr}")
-        curr_x, curr_y = goal_proj(local_x_curr, local_y_curr)
+        curr_x = local_x_curr - self.offset * np.cos(curr_yaw)
+        curr_y = local_y_curr - self.offset * np.sin(curr_yaw)
 
         return round(curr_x, 3), round(curr_y, 3), round(curr_yaw, 4)
 
@@ -287,42 +259,36 @@ class PurePursuit(object):
 
                     self.gem_enable = True
 
-
-            self.path_points_lon_x = np.array(self.path_points_lon_x)
-            self.path_points_lat_y = np.array(self.path_points_lat_y)
+            self.path_points_x = np.array(self.path_points_lon_x)
+            self.path_points_y = np.array(self.path_points_lat_y)
 
             curr_x, curr_y, curr_yaw = self.get_gem_state()
-            print(f'currx: {curr_x}')
-            print(f'curry: {curr_y}')
-            print(f'curry aw: {curr_yaw}')
 
             # finding the distance of each way point from the current position
-            for i in range(len(self.path_points_lon_x)):
-                self.dist_arr[i] = self.dist((self.path_points_lon_x[i], self.path_points_lat_y[i]), (curr_x, curr_y))
-            # print(f'dist arr: {self.dist_arr}')
+            self.dist_arr = np.zeros(len(self.path_points_lon_x))
+            if(len(self.path_points_x) == 0): continue
+            for i in range(len(self.path_points_x)):
+                self.dist_arr[i] = self.dist((self.path_points_x[i], self.path_points_y[i]), (curr_x, curr_y))
+
             # finding those points which are less than the look ahead distance (will be behind and ahead of the vehicle)
             goal_arr = np.where( (self.dist_arr < self.look_ahead + 0.3) & (self.dist_arr > self.look_ahead - 0.3) )[0]
-            goal_arr = goal_arr[goal_arr >= self.goal] # only consider points ahead of the vehicle
 
             # finding the goal point which is the last in the set of points less than the lookahead distance
             for idx in goal_arr:
-                v1 = [self.path_points_lon_x[idx]-curr_x , self.path_points_lat_y[idx]-curr_y]
+                v1 = [self.path_points_x[idx]-curr_x , self.path_points_y[idx]-curr_y]
                 v2 = [np.cos(curr_yaw), np.sin(curr_yaw)]
                 temp_angle = self.find_angle(v1,v2)
                 # find correct look-ahead point by using heading information
                 if abs(temp_angle) < np.pi/2:
                     self.goal = idx
                     break
-            print(self.goal)
-            self.goal_pub.publish(Int64(self.goal))
 
             # finding the distance between the goal point and the vehicle
             # true look-ahead distance between a waypoint and current position
             L = self.dist_arr[self.goal]
 
             # find the curvature and the angle 
-            alpha = self.path_points_heading[self.goal] - curr_yaw
-            print(f"{curr_yaw} {alpha}")
+            alpha = self.heading_to_yaw(self.path_points_heading[self.goal]) - curr_yaw
 
             # ----------------- tuning this part as needed -----------------
             k       = 0.41 
@@ -330,17 +296,17 @@ class PurePursuit(object):
             angle   = angle_i*2
             # ----------------- tuning this part as needed -----------------
 
-            f_delta = round(np.clip(angle, -0.5, 0.5), 3)
+            f_delta = round(np.clip(angle, -0.61, 0.61), 3)
 
             f_delta_deg = np.degrees(f_delta)
 
             # steering_angle in degrees
-            steering_angle = np.clip(self.front2steer(f_delta_deg), -90, 90)
-           
+            steering_angle = self.front2steer(f_delta_deg)
+
             if(self.gem_enable == True):
                 print("Current index: " + str(self.goal))
                 print("Forward velocity: " + str(self.speed))
-                ct_error = round(np.sin(np.radians(alpha)) * L, 7)
+                ct_error = round(np.sin(alpha) * L, 3)
                 print("Crosstrack Error: " + str(ct_error))
                 print("Front steering angle: " + str(np.degrees(f_delta)) + " degrees")
                 print("Steering wheel angle: " + str(steering_angle) + " degrees" )
@@ -364,8 +330,7 @@ class PurePursuit(object):
                 self.turn_cmd.ui16_cmd = 0 # turn right
 
             self.accel_cmd.f64_cmd = output_accel
-            # self.steer_cmd.angular_position = np.radians(steering_angle)
-            self.steer_cmd.angular_position = np.clip(self.pid_steer.get_control(current_time, ct_error, fwd=0.0), -90, 90)
+            self.steer_cmd.angular_position = np.radians(steering_angle)
             self.accel_pub.publish(self.accel_cmd)
             self.steer_pub.publish(self.steer_cmd)
             self.turn_pub.publish(self.turn_cmd)
@@ -386,3 +351,5 @@ def pure_pursuit():
 
 if __name__ == '__main__':
     pure_pursuit()
+
+
