@@ -131,12 +131,13 @@ class PurePursuit(object):
 
     def path_callback(self, msg):
         # self.path_points_yaw = []
-
+        i = 0
         for pose in msg.poses:
             x = pose.pose.position.x
             y = pose.pose.position.y
             quat = pose.pose.orientation
             _, _, yaw = euler_from_quaternion([quat.x, quat.y, quat.z, quat.w])
+            print("Pose " + str(i) + "-- pos x: " + str(x) + " pos y: " + str(y) + " yaw: " + str(yaw))
             # print(f"yaw in hybrid a star after euler from quat: {yaw}")
             # raw yaw is like oscillating between pi and negative pi when facing west
             # yaw = (yaw + np.pi) % (2*np.pi) # offset by 180. 
@@ -146,6 +147,7 @@ class PurePursuit(object):
             self.path_points_lon_x.append(x)
             self.path_points_lat_y.append(y)
             self.path_points_heading.append(yaw) # yaw is heading? in radians
+            i += 1
 
         self.dist_arr = np.zeros(len(self.path_points_lon_x))
         rospy.loginfo(f"✅ Received {len(self.path_points_lon_x)} waypoints.")
@@ -270,16 +272,16 @@ class PurePursuit(object):
                     self.accel_cmd.f64_cmd = 0.0
 
                     self.gear_pub.publish(self.gear_cmd)
-                    print("Foward Engaged!")
+                    # print("Foward Engaged!")
 
                     self.turn_pub.publish(self.turn_cmd)
-                    print("Turn Signal Ready!")
+                    # print("Turn Signal Ready!")
                     
                     self.brake_pub.publish(self.brake_cmd)
-                    print("Brake Engaged!")
+                    # print("Brake Engaged!")
 
                     self.accel_pub.publish(self.accel_cmd)
-                    print("Gas Engaged!")
+                    # print("Gas Engaged!")
 
                     self.gem_enable = True
 
@@ -288,9 +290,12 @@ class PurePursuit(object):
             self.path_points_lat_y = np.array(self.path_points_lat_y)
 
             curr_x, curr_y, curr_yaw = self.get_gem_state()
+            print("GET GEM STATE")
             print(f'currx: {curr_x}')
             print(f'curry: {curr_y}')
-            print(f'curry aw: {curr_yaw}')
+            print(f'curr yaw: {curr_yaw}')
+
+            
 
             # finding the distance of each way point from the current position
             for i in range(len(self.path_points_lon_x)):
@@ -331,14 +336,14 @@ class PurePursuit(object):
             steering_angle = self.front2steer(f_delta_deg)
            
 
-            if(self.gem_enable == True):
-                print("Current index: " + str(self.goal))
-                print("Forward velocity: " + str(self.speed))
-                ct_error = round(np.sin(alpha) * L, 3)
-                print("Crosstrack Error: " + str(ct_error))
-                print("Front steering angle: " + str(np.degrees(f_delta)) + " degrees")
-                print("Steering wheel angle: " + str(steering_angle) + " degrees" )
-                print("\n")
+            # if(self.gem_enable == True):
+            #     print("Current index: " + str(self.goal))
+            #     print("Forward velocity: " + str(self.speed))
+            #     ct_error = round(np.sin(alpha) * L, 3)
+            #     print("Crosstrack Error: " + str(ct_error))
+            #     print("Front steering angle: " + str(np.degrees(f_delta)) + " degrees")
+            #     print("Steering wheel angle: " + str(steering_angle) + " degrees" )
+            #     print("\n")
 
             current_time = rospy.get_time()
             filt_vel     = self.speed_filter.get_data(self.speed)
