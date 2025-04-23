@@ -11,6 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   ackermann_msgs
   visualization_msgs
+  tf2_geometry_msgs
 )
 
 catkin_package(
@@ -25,6 +26,7 @@ catkin_install_python(PROGRAMS
   scripts/hybrid_astar_rs_node.py
   scripts/camera_detection.py
   scripts/lidar_detection.py
+  scripts/lidar_camera_fusion.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

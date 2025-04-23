@@ -44,8 +44,12 @@ class YOLOv5Node:
             detections = results.pandas().xyxy[0].to_dict(orient='records')
             
             if detections:
-                rospy.loginfo(f'Detections: {detections}')
-                self.detections_pub.publish(String(data=str(detections)))
+                # rospy.loginfo(f'Detections: {detections}')
+                detection_msg = String()
+                detection_msg.data = str(detections)
+                detection_msg.header = msg.header # copy header from image
+                self.detections_pub.publish(detection_msg)
+                # self.detections_pub.publish(String(data=str(detections)))
                 
                 # Draw bounding boxes on frame
                 for det in detections:

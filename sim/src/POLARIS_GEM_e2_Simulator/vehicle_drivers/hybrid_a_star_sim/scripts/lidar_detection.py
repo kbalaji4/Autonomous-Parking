@@ -17,7 +17,7 @@ if scripts_dir not in sys.path:
 print("printing paths in main(): ")
 print(sys.path)
 
-def filter_points(points_array, max_range=15.0, min_height=-2.0, max_height=1.5):
+def filter_points(points_array, max_range=15.0, min_height=-1.7, max_height=-0.5):
     """Filter points based on range and height"""
     # Calculate distances from origin
     distances = np.sqrt(points_array[:,0]**2 + points_array[:,1]**2)
@@ -59,30 +59,31 @@ def pointcloud_callback(msg):
         if not points:
             return
         points = np.array(points)
-        print(f"Original points: {points.shape}")
+        rospy.loginfo(f"Original points: {points.shape}")
 
         filtered_points = filter_points(points)
-        print(f"Filtered points: {filtered_points.shape}")
+        rospy.loginfo(f"Filtered points: {filtered_points.shape}")
 
         downsampled_points = downsample_points(filtered_points)
-        print(f"Downsampled points: {downsampled_points.shape}")
+        rospy.loginfo(f"Downsampled points: {downsampled_points.shape}")
 
         if len(downsampled_points) == 0:
             rospy.loginfo("no points after downsampling")
             return
         
         scaled_points = downsampled_points
-        # scaler = StandardScaler()
-        # scaled_points = scaler.fit_transform(downsampled_points)
+        scaler = StandardScaler()
+        scaled_points = scaler.fit_transform(downsampled_points)
         
         # dbscan for unsupervised clustering
-        clustering = DBSCAN(eps=0.4, min_samples=4, n_jobs=-1).fit(scaled_points)
+        clustering = DBSCAN(eps=0.05, min_samples=6, n_jobs=-1).fit(scaled_points)
         
         labels = clustering.labels_
         unique_labels = set(labels)
         
         marker_array = MarkerArray()
         marker_id = 0
+        rospy.loginfo(f"Unique labels: {len(unique_labels)}")
         for k in unique_labels:
             if k == -1:
                 # noise
@@ -90,9 +91,9 @@ def pointcloud_callback(msg):
             class_member_mask = (labels == k)
             cluster = downsampled_points[class_member_mask]
 
-            if len(cluster) < 3:
-                # skip small clusters
-                continue 
+            # if len(cluster) < 5:
+            #     # skip small clusters
+            #     continue 
 
             # get centroid
             centroid = np.mean(cluster, axis=0)
@@ -111,8 +112,10 @@ def pointcloud_callback(msg):
 
             # cluster dims for our markers
             cluster_std = np.std(cluster, axis=0)
-            marker.scale.x = max(0.3, 2*cluster_std[0])
-            marker.scale.y = max(0.3, 2*cluster_std[1])
+            marker.scale.x = 0.5
+            marker.scale.y = 0.5
+            # marker.scale.x = max(0.3, 2*cluster_std[0])
+            # marker.scale.y = max(0.3, 2*cluster_std[1])
             marker.scale.z = 0.5
 
             marker.color.a = 0.7
@@ -128,9 +131,27 @@ def pointcloud_callback(msg):
     except Exception as e:
         rospy.logerr(f"Error processing point cloud in pointcloud_callback: {e}")
 
+def clear_markers():
+    """publish empty marker array"""
+    marker = Marker()
+    # marker.header.frame_id = "map"  # or whatever frame you're using
+    marker.header.stamp = rospy.Time.now()
+    marker.ns = "obstacles"
+    marker.action = Marker.DELETEALL
+    marker.id = 0
+    
+    marker_array = MarkerArray()
+    marker_array.markers.append(marker)
+    marker_pub.publish(marker_array)
+    rospy.sleep(0.1) # wait for publish 
+
+
 if __name__ == '__main__':
     rospy.init_node('lidar_obstacle_detector')
     lidar_sub = rospy.Subscriber('/ouster/points', PointCloud2, pointcloud_callback, queue_size=1)
     marker_pub = rospy.Publisher('/lidar_obstacles', MarkerArray, queue_size=1)
+
+    clear_markers() # could also just toggle the checkbox in rviz 
+
     rospy.loginfo("Lidar obstacle detector node started")
     rospy.spin()
