@@ -129,29 +129,6 @@ class PurePursuit(object):
         self.steer_cmd.angular_velocity_limit = 2.0 # radians/second
 
 
-    def path_callback(self, msg):
-        # self.path_points_yaw = []
-        i = 0
-        for pose in msg.poses:
-            x = pose.pose.position.x
-            y = pose.pose.position.y
-            quat = pose.pose.orientation
-            _, _, yaw = euler_from_quaternion([quat.x, quat.y, quat.z, quat.w])
-            print("Pose " + str(i) + "-- pos x: " + str(x) + " pos y: " + str(y) + " yaw: " + str(yaw))
-            # print(f"yaw in hybrid a star after euler from quat: {yaw}")
-            # raw yaw is like oscillating between pi and negative pi when facing west
-            yaw = (yaw + np.pi) % (2*np.pi) # offset by 180. 
-            # self.path_points_x.append(x)
-            # self.path_points_y.append(y)
-            yaw = np.degrees(yaw)
-            #x, y = self.wps_to_local_xy(x, y)
-            self.path_points_lon_x.append(x)
-            self.path_points_lat_y.append(y)
-            self.path_points_heading.append(yaw) # yaw is heading? in radians
-            i += 1
-
-        self.dist_arr = np.zeros(len(self.path_points_lon_x))
-        rospy.loginfo(f"✅ Received {len(self.path_points_lon_x)} waypoints.")
 
     def inspva_callback(self, inspva_msg):
         self.lat     = inspva_msg.latitude  # latitude
@@ -205,6 +182,29 @@ class PurePursuit(object):
     #     self.path_points_heading = [float(point[2]) for point in path_points] # heading
     #     self.wp_size             = len(self.path_points_lon_x)
     #     self.dist_arr            = np.zeros(self.wp_size)
+    def path_callback(self, msg):
+        # self.path_points_yaw = []
+        i = 0
+        for pose in msg.poses:
+            x = pose.pose.position.x
+            y = pose.pose.position.y
+            quat = pose.pose.orientation
+            _, _, yaw = euler_from_quaternion([quat.x, quat.y, quat.z, quat.w])
+            print("Pose " + str(i) + "-- pos x: " + str(x) + " pos y: " + str(y) + " quat: " + str(quat) + " yaw: " + str(yaw))
+            # print(f"yaw in hybrid a star after euler from quat: {yaw}")
+            # raw yaw is like oscillating between pi and negative pi when facing west
+            yaw = (yaw + np.pi) % (2*np.pi) # offset by 180. 
+            # self.path_points_x.append(x)
+            # self.path_points_y.append(y)
+            yaw = np.degrees(yaw)
+            x, y = self.wps_to_local_xy(x, y)
+            self.path_points_lon_x.append(x)
+            self.path_points_lat_y.append(y)
+            self.path_points_heading.append(yaw) # yaw is heading? in radians
+            i += 1
+
+        self.dist_arr = np.zeros(len(self.path_points_lon_x))
+        rospy.loginfo(f"✅ Received {len(self.path_points_lon_x)} waypoints.")
 
     def wps_to_local_xy(self, lon_wp, lat_wp):
         # convert GNSS waypoints into local fixed frame reprented in x and y
@@ -216,8 +216,8 @@ class PurePursuit(object):
         # vehicle gnss heading (yaw) in degrees
         # vehicle x, y position in fixed local frame, in meters
         # reference point is located at the center of GNSS antennas
-        #local_x_curr, local_y_curr = self.wps_to_local_xy(self.lon, self.lat)
-        local_x_curr, local_y_curr = self.lon, self.lat # pure septentrio to match planner
+        local_x_curr, local_y_curr = self.wps_to_local_xy(self.lon, self.lat)
+        # local_x_curr, local_y_curr = self.lon, self.lat # pure septentrio to match planner
 
         # heading to yaw (degrees to radians)
         # heading is calculated from two GNSS antennas
@@ -229,10 +229,10 @@ class PurePursuit(object):
         curr_y = local_y_curr - self.offset * np.sin(curr_yaw)
 
         # project from long/lat to utm since planner uses utm
-        goal_proj = pyproj.Proj(proj='utm', zone=16, ellps='WGS84')
-        # print(f"b4 proj curr_x: {local_x_curr}")
-        # print(f"b4 proj curr_y: {local_y_curr}")
-        curr_x, curr_y = goal_proj(local_x_curr, local_y_curr)
+        # goal_proj = pyproj.Proj(proj='utm', zone=16, ellps='WGS84')
+        # # print(f"b4 proj curr_x: {local_x_curr}")
+        # # print(f"b4 proj curr_y: {local_y_curr}")
+        # curr_x, curr_y = goal_proj(local_x_curr, local_y_curr)
 
         return round(curr_x, 3), round(curr_y, 3), round(curr_yaw, 4)
 
