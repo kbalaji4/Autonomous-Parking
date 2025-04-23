@@ -55,7 +55,7 @@ class PurePursuit(object):
 
         self.rate       = rospy.Rate(10)
 
-        self.look_ahead = 10 # was 4 before
+        self.look_ahead = 4 # was 4 before
         self.wheelbase  = 1.75 # meters
         self.offset     = 0.46 # meters
         
@@ -137,11 +137,12 @@ class PurePursuit(object):
             y = pose.pose.position.y
             quat = pose.pose.orientation
             _, _, yaw = euler_from_quaternion([quat.x, quat.y, quat.z, quat.w])
-            print(f"yaw in hybrid a star after euler from quat: {yaw}")
+            # print(f"yaw in hybrid a star after euler from quat: {yaw}")
             # raw yaw is like oscillating between pi and negative pi when facing west
-            yaw = (yaw + np.pi) % (2*np.pi) # offset by 180. 
+            # yaw = (yaw + np.pi) % (2*np.pi) # offset by 180. 
             # self.path_points_x.append(x)
             # self.path_points_y.append(y)
+            yaw = np.degrees(yaw)
             self.path_points_lon_x.append(x)
             self.path_points_lat_y.append(y)
             self.path_points_heading.append(yaw) # yaw is heading? in radians
@@ -212,13 +213,13 @@ class PurePursuit(object):
         # vehicle gnss heading (yaw) in degrees
         # vehicle x, y position in fixed local frame, in meters
         # reference point is located at the center of GNSS antennas
-        # local_x_curr, local_y_curr = self.wps_to_local_xy(self.lon, self.lat)
+        #local_x_curr, local_y_curr = self.wps_to_local_xy(self.lon, self.lat)
         local_x_curr, local_y_curr = self.lon, self.lat # pure septentrio to match planner
 
         # heading to yaw (degrees to radians)
         # heading is calculated from two GNSS antennas
-        # curr_yaw = self.heading_to_yaw(self.heading) 
-        curr_yaw = self.heading
+        curr_yaw = self.heading_to_yaw(self.heading) 
+        #curr_yaw = self.heading
 
         # reference point is located at the center of rear axle
         # curr_x = local_x_curr - self.offset * np.cos(curr_yaw)
@@ -322,12 +323,12 @@ class PurePursuit(object):
             angle   = angle_i*2
             # ----------------- tuning this part as needed -----------------
 
-            f_delta = round(np.clip(angle, -0.5, 0.5), 3)
+            f_delta = round(np.clip(angle, -0.61, 0.61), 3)
 
             f_delta_deg = np.degrees(f_delta)
 
             # steering_angle in degrees
-            steering_angle = np.clip(self.front2steer(f_delta_deg), -90, 90)
+            steering_angle = self.front2steer(f_delta_deg)
            
 
             if(self.gem_enable == True):
