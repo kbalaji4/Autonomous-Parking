@@ -55,7 +55,7 @@ class PurePursuit(object):
 
         self.rate       = rospy.Rate(10)
 
-        self.look_ahead = 10 # was 4 before
+        self.look_ahead = 4 # was 4 before
         self.wheelbase  = 1.75 # meters
         self.offset     = 0.46 # meters
 
@@ -133,7 +133,9 @@ class PurePursuit(object):
 
     def path_callback(self, msg):
         # self.path_points_yaw = []
-
+        self.path_points_lon_x.clear()
+        self.path_points_lat_y.clear()
+        self.path_points_heading.clear()
         for pose in msg.poses:
             x = pose.pose.position.x
             y = pose.pose.position.y
@@ -220,8 +222,8 @@ class PurePursuit(object):
 
         # heading to yaw (degrees to radians)
         # heading is calculated from two GNSS antennas
-        # curr_yaw = self.heading_to_yaw(self.heading) 
-        curr_yaw = self.heading
+        curr_yaw = self.heading_to_yaw(self.heading) 
+        #curr_yaw = self.heading
 
         # reference point is located at the center of rear axle
         # curr_x = local_x_curr - self.offset * np.cos(curr_yaw)
@@ -302,8 +304,9 @@ class PurePursuit(object):
                 continue
 
             for i in range(len(self.path_points_x)):
+             
                 self.dist_arr[i] = self.dist((self.path_points_x[i], self.path_points_y[i]), (curr_x, curr_y))
-
+            self.look_ahead = max(4.0, self.speed * 2.5)
             goal_arr = np.where((self.dist_arr < self.look_ahead + 0.3) & (self.dist_arr > self.look_ahead - 0.3))[0]
 
             found = False
@@ -312,13 +315,17 @@ class PurePursuit(object):
                 v2 = [np.cos(curr_yaw), np.sin(curr_yaw)]
                 temp_angle = self.find_angle(v1, v2)
                 print(temp_angle)
-                if abs(temp_angle) < np.pi:
+                if abs(temp_angle) < np.pi / 2:
                     self.goal = idx
                     found = True
                     break
 
             if not found:
-                rospy.logwarn("⚠️ No valid goal point ahead.")
+                rospy.logwarn("⚠️ No valid goal point ahead. Slowing Down")
+                self.accel_cmd.f64_cmd = 0.1
+                self.steer_cmd.angular_position = 0.0
+                self.accel_pub.publish(self.accel_cmd)
+                self.steer_pub.publish(self.steer_cmd)
                 self.rate.sleep()
                 continue
 
@@ -330,10 +337,10 @@ class PurePursuit(object):
             goal_y_veh_coord = gvcy*np.cos(curr_yaw) - gvcx*np.sin(curr_yaw)
 
             alpha = self.path_points_heading[self.goal] - curr_yaw
+            alpha = (alpha + np.pi) % (2 * np.pi) - np.pi
             k = 0.285
             angle_i = math.atan((2 * k * self.wheelbase * math.sin(alpha)) / L) 
             angle = angle_i * 2
-            angle = round(np.clip(angle, -0.61, 0.61), 3)
             # ----------------- tuning this part as needed -----------------
 
             f_delta = round(np.clip(angle, -0.6, 0.6), 3)
