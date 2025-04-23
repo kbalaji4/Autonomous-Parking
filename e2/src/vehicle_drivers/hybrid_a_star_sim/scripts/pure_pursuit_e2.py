@@ -140,10 +140,11 @@ class PurePursuit(object):
             print("Pose " + str(i) + "-- pos x: " + str(x) + " pos y: " + str(y) + " yaw: " + str(yaw))
             # print(f"yaw in hybrid a star after euler from quat: {yaw}")
             # raw yaw is like oscillating between pi and negative pi when facing west
-            # yaw = (yaw + np.pi) % (2*np.pi) # offset by 180. 
+            yaw = (yaw + np.pi) % (2*np.pi) # offset by 180. 
             # self.path_points_x.append(x)
             # self.path_points_y.append(y)
             yaw = np.degrees(yaw)
+            #x, y = self.wps_to_local_xy(x, y)
             self.path_points_lon_x.append(x)
             self.path_points_lat_y.append(y)
             self.path_points_heading.append(yaw) # yaw is heading? in radians
@@ -224,11 +225,11 @@ class PurePursuit(object):
         #curr_yaw = self.heading
 
         # reference point is located at the center of rear axle
-        # curr_x = local_x_curr - self.offset * np.cos(curr_yaw)
-        # curr_y = local_y_curr - self.offset * np.sin(curr_yaw)
+        curr_x = local_x_curr - self.offset * np.cos(curr_yaw)
+        curr_y = local_y_curr - self.offset * np.sin(curr_yaw)
 
         # project from long/lat to utm since planner uses utm
-        goal_proj = pyproj.Proj(proj='utm', zone=16, ellps='WGS84')
+        #goal_proj = pyproj.Proj(proj='utm', zone=16, ellps='WGS84')
         # print(f"b4 proj curr_x: {local_x_curr}")
         # print(f"b4 proj curr_y: {local_y_curr}")
         curr_x, curr_y = goal_proj(local_x_curr, local_y_curr)
@@ -300,7 +301,7 @@ class PurePursuit(object):
             # finding the distance of each way point from the current position
             for i in range(len(self.path_points_lon_x)):
                 self.dist_arr[i] = self.dist((self.path_points_lon_x[i], self.path_points_lat_y[i]), (curr_x, curr_y))
-            # print(f'dist arr: {self.dist_arr}')
+            print(f'dist arr: {self.dist_arr}')
             # finding those points which are less than the look ahead distance (will be behind and ahead of the vehicle)
             goal_arr = np.where( (self.dist_arr < self.look_ahead + 0.3) & (self.dist_arr > self.look_ahead - 0.3) )[0]
 
@@ -309,6 +310,7 @@ class PurePursuit(object):
                 v1 = [self.path_points_lon_x[idx]-curr_x , self.path_points_lat_y[idx]-curr_y]
                 v2 = [np.cos(curr_yaw), np.sin(curr_yaw)]
                 temp_angle = self.find_angle(v1,v2)
+                print("temp angle: " + str(temp_angle))
                 # find correct look-ahead point by using heading information
                 if abs(temp_angle) < np.pi/2:
                     self.goal = idx
