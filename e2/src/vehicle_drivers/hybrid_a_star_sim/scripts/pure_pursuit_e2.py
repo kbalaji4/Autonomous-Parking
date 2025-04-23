@@ -229,7 +229,7 @@ class PurePursuit(object):
         curr_y = local_y_curr - self.offset * np.sin(curr_yaw)
 
         # project from long/lat to utm since planner uses utm
-        #goal_proj = pyproj.Proj(proj='utm', zone=16, ellps='WGS84')
+        goal_proj = pyproj.Proj(proj='utm', zone=16, ellps='WGS84')
         # print(f"b4 proj curr_x: {local_x_curr}")
         # print(f"b4 proj curr_y: {local_y_curr}")
         curr_x, curr_y = goal_proj(local_x_curr, local_y_curr)
