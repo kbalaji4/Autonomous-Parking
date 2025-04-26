@@ -190,13 +190,13 @@ class PurePursuit(object):
             x = pose.pose.position.x
             y = pose.pose.position.y
             quat = pose.pose.orientation
-            print(pose.pose)
+            # print(pose.pose)
             goal_proj = pyproj.Proj(proj='utm', zone=16, ellps='WGS84')
             x,y = goal_proj(x, y, inverse=True)
             x, y = self.wps_to_local_xy(x, y)
-            _, _, yaw = euler_from_quaternion([x, y, quat.z, quat.w])
-            yaw += np.pi/2
-            print("Pose " + str(i) + "-- pos x: " + str(x) + " pos y: " + str(y) + " quat: " + str(quat) + " yaw: " + str(yaw))
+            _, _, yaw = euler_from_quaternion([quat.x, quat.y, quat.z, quat.w])
+            #yaw += np.pi/2
+            print("Pose " + str(i) + " raw x: " + str(pose.pose.position.x) + "-- local_pos x: " + str(x) + " raw y: " + str(pose.pose.position.y) + " local_pos y: " + str(y)  + " yaw: " + str(yaw))
             # print(f"yaw in hybrid a star after euler from quat: {yaw}")
             # raw yaw is like oscillating between pi and negative pi when facing west
             # yaw = (yaw + np.pi) % (2*np.pi) # offset by 180. 
@@ -207,7 +207,7 @@ class PurePursuit(object):
             
             self.path_points_lon_x_list.append(x)
             self.path_points_lat_y_list.append(y)
-            self.path_points_heading.append(yaw) # yaw is heading? in radians
+            self.path_points_heading.append(yaw) 
             i += 1
 
         
