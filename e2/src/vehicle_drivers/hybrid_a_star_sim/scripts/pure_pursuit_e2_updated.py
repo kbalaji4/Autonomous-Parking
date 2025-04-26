@@ -32,7 +32,7 @@ import rospy
 import pyproj
 
 # GEM Sensor Headers
-from std_msgs.msg import String, Bool, Float32, Float64
+from std_msgs.msg import String, Bool, Float32, Float64, Int64
 from sensor_msgs.msg import NavSatFix
 from novatel_gps_msgs.msg import NovatelPosition, NovatelXYZ, Inspva
 from septentrio_gnss_driver.msg import INSNavGeod # they do septentrio
@@ -49,8 +49,8 @@ class PurePursuit(object):
     
     def __init__(self):
 
-        self.path_points_lon_x = []
-        self.path_points_lat_y = []
+        self.path_points_lon_x_list = []
+        self.path_points_lat_y_list = []
         self.path_points_heading = []
 
         self.rate       = rospy.Rate(10)
@@ -80,7 +80,8 @@ class PurePursuit(object):
         self.olon       = -88.2359994
 
         # read waypoints into the system 
-        self.goal       = 0            
+        self.goal       = 0    
+        self.goal_pub = rospy.Publisher('/current_goal_idx', Int64, queue_size=10)            
         # self.read_waypoints() 
 
         self.desired_speed = 1.5  # m/s, reference speed
@@ -194,20 +195,23 @@ class PurePursuit(object):
             x,y = goal_proj(x, y, inverse=True)
             x, y = self.wps_to_local_xy(x, y)
             _, _, yaw = euler_from_quaternion([x, y, quat.z, quat.w])
+            yaw += np.pi/2
             print("Pose " + str(i) + "-- pos x: " + str(x) + " pos y: " + str(y) + " quat: " + str(quat) + " yaw: " + str(yaw))
             # print(f"yaw in hybrid a star after euler from quat: {yaw}")
             # raw yaw is like oscillating between pi and negative pi when facing west
             # yaw = (yaw + np.pi) % (2*np.pi) # offset by 180. 
             # self.path_points_x.append(x)
             # self.path_points_y.append(y)
+            
             yaw = np.degrees(yaw)
             
-            self.path_points_lon_x.append(x)
-            self.path_points_lat_y.append(y)
+            self.path_points_lon_x_list.append(x)
+            self.path_points_lat_y_list.append(y)
             self.path_points_heading.append(yaw) # yaw is heading? in radians
             i += 1
 
-        rospy.loginfo(f"✅ Received {len(self.path_points_lon_x)} waypoints.")
+        
+        rospy.loginfo(f"✅ Received {len(self.path_points_lon_x_list)} waypoints.")
 
     def wps_to_local_xy(self, lon_wp, lat_wp):
         # convert GNSS waypoints into local fixed frame reprented in x and y
@@ -226,6 +230,7 @@ class PurePursuit(object):
         # heading is calculated from two GNSS antennas
         curr_yaw = self.heading_to_yaw(self.heading) 
         #curr_yaw = self.heading
+        print(f"{self.heading} degrees")
 
         # reference point is located at the center of rear axle
         curr_x = local_x_curr - self.offset * np.cos(curr_yaw)
@@ -290,8 +295,8 @@ class PurePursuit(object):
                     self.gem_enable = True
 
 
-            self.path_points_lon_x = np.array(self.path_points_lon_x)
-            self.path_points_lat_y = np.array(self.path_points_lat_y)
+            self.path_points_lon_x = np.array(self.path_points_lon_x_list)
+            self.path_points_lat_y = np.array(self.path_points_lat_y_list)
 
             curr_x, curr_y, curr_yaw = self.get_gem_state()
             print("GET GEM STATE")
@@ -300,14 +305,19 @@ class PurePursuit(object):
             print(f'curr yaw: {curr_yaw}')
 
             
+#             dist arr: [0.447 1.447 2.441 3.423 4.414 5.399 6.39  7.383 8.377]
+#           goal array: [0 1 2 3 4 5 6]
 
-            # finding the distance of each way point from the current position
+
             self.dist_arr = np.zeros(len(self.path_points_lon_x))
+            # finding the distance of each way point from the current position
             for i in range(len(self.path_points_lon_x)):
                 self.dist_arr[i] = self.dist((self.path_points_lon_x[i], self.path_points_lat_y[i]), (curr_x, curr_y))
             print(f'dist arr: {self.dist_arr}')
             # finding those points which are less than the look ahead distance (will be behind and ahead of the vehicle)
-            goal_arr = np.where( (self.dist_arr < self.look_ahead + 0.3) & (self.dist_arr > self.look_ahead - 0.3) )[0]
+            goal_arr = np.where( (self.dist_arr < 1) & (self.dist_arr > 0))[0]
+            # goal_arr = np.where( (self.dist_arr < self.look_ahead + 3) & (self.dist_arr > self.look_ahead - 4) )[0]
+            print("goal array: " + str(goal_arr))
 
             # finding the goal point which is the last in the set of points less than the lookahead distance
             for idx in goal_arr:
@@ -319,28 +329,30 @@ class PurePursuit(object):
                 if abs(temp_angle) < np.pi/2:
                     self.goal = idx
                     break
-
+            print("goal: " + str(self.goal))
+            self.goal_pub.publish(Int64(self.goal))
             # finding the distance between the goal point and the vehicle
             # true look-ahead distance between a waypoint and current position
             L = self.dist_arr[self.goal]
 
             # find the curvature and the angle 
-            alpha = self.heading_to_yaw(self.path_points_heading[self.goal]) - curr_yaw
-            print(f"{curr_yaw} {alpha}")
+            alpha = (self.heading_to_yaw(self.path_points_heading[self.goal]) - (np.pi/2)) - curr_yaw
+            print(f"path points heading goal indeed : {self.path_points_heading[self.goal]}")
+            print(f"curr yaw and alpha: {curr_yaw} {alpha}")
 
             # ----------------- tuning this part as needed -----------------
             k       = 0.41 
             angle_i = math.atan((k * 2 * self.wheelbase * math.sin(alpha)) / L) 
             angle   = angle_i*2
             # ----------------- tuning this part as needed -----------------
-
+            print(f"angle: {angle}")
             f_delta = round(np.clip(angle, -0.61, 0.61), 3)
 
             f_delta_deg = np.degrees(f_delta)
 
             # steering_angle in degrees
             steering_angle = self.front2steer(f_delta_deg)
-           
+            print(f"{steering_angle} degrees")
 
             # if(self.gem_enable == True):
             #     print("Current index: " + str(self.goal))

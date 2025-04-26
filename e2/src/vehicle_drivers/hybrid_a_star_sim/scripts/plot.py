@@ -85,7 +85,7 @@ def plot_from_csv(planned_path_file, actual_path_file):
                    angles='xy', scale_units='xy', scale=1, color='b', label="Yaw")
     if target_indices:
          for i, (actual_pos, target_idx) in enumerate(zip(actual_path, target_indices)):
-             if i % 5 == 0:  # every 5th connection
+             if i % 1 == 0:  # every 5th connection
                  ax.plot([actual_pos[0], planned_path[target_idx][0]], 
                         [actual_pos[1], planned_path[target_idx][1]], 
                         'g--', alpha=0.75, linewidth=1.0)
@@ -103,6 +103,6 @@ def plot_from_csv(planned_path_file, actual_path_file):
 
 # if __name__ == "main":
     # change these
-planned_path_file = "/home/gem/bkkw0/e2/planner_path_data_latest.csv"
-actual_path_file = "/home/gem/bkkw0/e2/vehicle_trajectory_20250423-122548.csv"
+planned_path_file = "/home/gem/bkkw0/e2/planner_path_data_20250426-135232.csv"
+actual_path_file = "/home/gem/bkkw0/e2/vehicle_trajectory_20250426-134643.csv"
 plot_from_csv(planned_path_file, actual_path_file)
