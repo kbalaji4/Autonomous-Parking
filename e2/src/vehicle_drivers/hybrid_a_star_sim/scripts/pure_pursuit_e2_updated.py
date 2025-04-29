@@ -336,7 +336,7 @@ class PurePursuit(object):
             L = self.dist_arr[self.goal]
 
             # find the curvature and the angle 
-            alpha = (self.heading_to_yaw(self.path_points_heading[self.goal]) - (np.pi/2)) - curr_yaw
+            alpha = self.heading_to_yaw(self.path_points_heading[self.goal]) - curr_yaw
             print(f"path points heading goal indeed : {self.path_points_heading[self.goal]}")
             print(f"curr yaw and alpha: {curr_yaw} {alpha}")
 
