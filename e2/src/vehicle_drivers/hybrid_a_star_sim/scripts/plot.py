@@ -103,6 +103,6 @@ def plot_from_csv(planned_path_file, actual_path_file):
 
 # if __name__ == "main":
     # change these
-planned_path_file = "/home/gem/bkkw0/e2/planner_path_data_20250426-135232.csv"
-actual_path_file = "/home/gem/bkkw0/e2/vehicle_trajectory_20250426-134643.csv"
+planned_path_file = "/home/gem/bkkw0/e2/planner_path_data_latest.csv"
+actual_path_file = "/home/gem/bkkw0/e2/vehicle_trajectory_latest.csv"
 plot_from_csv(planned_path_file, actual_path_file)

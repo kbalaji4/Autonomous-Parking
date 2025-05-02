@@ -38,7 +38,9 @@ current_yaw = None
 vehicle_positions = []
 vehicle_positions_lock = Lock()
 csv_writer = None
+csv_writer1 = None
 csv_file = None
+csv_file1 = None
 current_goal_idx = 0
 
 def gps_callback(msg):
@@ -141,29 +143,38 @@ def wait_for_pose():
         rospy.sleep(0.1)
 
 def save_vehicle_position():
-    global current_utm, current_yaw, vehicle_positions, csv_writer, current_goal_idx
+    global current_utm, current_yaw, vehicle_positions, csv_writer, csv_writer1, current_goal_idx
     if current_utm is not None and current_yaw is not None:
         with vehicle_positions_lock:
             position = [time.time(), current_utm[0], current_utm[1], current_yaw,  current_goal_idx]
             vehicle_positions.append(position)
             if csv_writer:
                 csv_writer.writerow(['actual'] + position)
+            if csv_writer1:
+                csv_writer1.writerow(['actual'] + position)
 
 def setup_vehicle_tracking():
-    global csv_writer, csv_file
+    global csv_writer, csv_file, csv_writer1, csv_file1
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     filename = f"vehicle_trajectory_{timestamp}.csv"
+    filename1 = "vehicle_trajectory_latest.csv"
     csv_file = open(filename, 'w', newline='')
     csv_writer = csv.writer(csv_file)
     csv_writer.writerow(['type', 'timestamp', 'x', 'y', 'yaw',  'target_waypoint_idx'])
+
+    csv_file1 = open(filename1, 'w', newline='')
+    csv_writer1 = csv.writer(csv_file1)
+    csv_writer1.writerow(['type', 'timestamp', 'x', 'y', 'yaw',  'target_waypoint_idx'])
     
     # Start position tracking timer
     rospy.Timer(rospy.Duration(0.1), lambda _: save_vehicle_position())
 
 def cleanup_vehicle_tracking():
-    global csv_file
+    global csv_file, csv_file1
     if csv_file:
         csv_file.close()
+    if csv_file1:
+        csv_file1.close()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -241,6 +252,8 @@ def main():
             local_path = [(x - offset_x, y - offset_y, yaw) for x, y, yaw in path]
             save_path_to_csv(local_path, (start_x - offset_x, start_y - offset_y, start_yaw),
                     (goal_x - offset_x, goal_y - offset_y, goal_yaw))
+            save_path_to_csv(local_path, (start_x - offset_x, start_y - offset_y, start_yaw),
+                    (goal_x - offset_x, goal_y - offset_y, goal_yaw), filename="planner_path_data_latest.csv")
             plot_path(local_path, (start_x - offset_x, start_y - offset_y, start_yaw),
                     (goal_x - offset_x, goal_y - offset_y, goal_yaw))
         else:

@@ -84,7 +84,7 @@ class PurePursuit(object):
         self.goal_pub = rospy.Publisher('/current_goal_idx', Int64, queue_size=10)            
         # self.read_waypoints() 
 
-        self.desired_speed = 1.5  # m/s, reference speed
+        self.desired_speed = 1.48  # m/s, reference speed
         self.max_accel     = 0.48 # % of acceleration
         self.pid_speed     = PID(0.5, 0.0, 0.1, wg=20)
         self.speed_filter  = OnlineFilter(1.2, 30, 4)
@@ -195,7 +195,7 @@ class PurePursuit(object):
             x,y = goal_proj(x, y, inverse=True)
             x, y = self.wps_to_local_xy(x, y)
             _, _, yaw = euler_from_quaternion([quat.x, quat.y, quat.z, quat.w])
-            #yaw += np.pi/2
+            yaw += np.pi/2
             print("Pose " + str(i) + " raw x: " + str(pose.pose.position.x) + "-- local_pos x: " + str(x) + " raw y: " + str(pose.pose.position.y) + " local_pos y: " + str(y)  + " yaw: " + str(yaw))
             # print(f"yaw in hybrid a star after euler from quat: {yaw}")
             # raw yaw is like oscillating between pi and negative pi when facing west
@@ -315,11 +315,13 @@ class PurePursuit(object):
                 self.dist_arr[i] = self.dist((self.path_points_lon_x[i], self.path_points_lat_y[i]), (curr_x, curr_y))
             print(f'dist arr: {self.dist_arr}')
             # finding those points which are less than the look ahead distance (will be behind and ahead of the vehicle)
-            goal_arr = np.where( (self.dist_arr < 1) & (self.dist_arr > 0))[0]
+            # goal_arr = np.where( (self.dist_arr < 4) & (self.dist_arr > 0))[0]
+            goal_arr = np.where( (self.dist_arr < self.look_ahead + 1.5) & (self.dist_arr > self.look_ahead - 1.5) )[0]
             # goal_arr = np.where( (self.dist_arr < self.look_ahead + 3) & (self.dist_arr > self.look_ahead - 4) )[0]
             print("goal array: " + str(goal_arr))
 
             # finding the goal point which is the last in the set of points less than the lookahead distance
+            found = False
             for idx in goal_arr:
                 v1 = [self.path_points_lon_x[idx]-curr_x , self.path_points_lat_y[idx]-curr_y]
                 v2 = [np.cos(curr_yaw), np.sin(curr_yaw)]
@@ -328,7 +330,14 @@ class PurePursuit(object):
                 # find correct look-ahead point by using heading information
                 if abs(temp_angle) < np.pi/2:
                     self.goal = idx
+                    found = True
                     break
+            
+            if not found:
+                rospy.logwarn("⚠️ No valid goal point ahead.")
+                self.rate.sleep()
+                continue
+            
             print("goal: " + str(self.goal))
             self.goal_pub.publish(Int64(self.goal))
             # finding the distance between the goal point and the vehicle
@@ -352,7 +361,7 @@ class PurePursuit(object):
 
             # steering_angle in degrees
             steering_angle = self.front2steer(f_delta_deg)
-            print(f"{steering_angle} degrees")
+            print(f"{steering_angle} sterring angle degrees")
 
             # if(self.gem_enable == True):
             #     print("Current index: " + str(self.goal))

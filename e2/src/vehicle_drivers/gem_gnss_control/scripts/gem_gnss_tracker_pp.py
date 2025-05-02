@@ -159,7 +159,7 @@ class PurePursuit(object):
     def read_waypoints(self):
         # read recorded GPS lat, lon, heading
         dirname  = os.path.dirname(__file__)
-        filename = os.path.join(dirname, '../waypoints/xyhead_demo_pp.csv')
+        filename = os.path.join(dirname, '../waypoints/hybrid_astar_path_original.csv')
         with open(filename) as f:
             path_points = [tuple(line) for line in csv.reader(f)]
         # x towards East and y towards North
@@ -332,5 +332,4 @@ def pure_pursuit():
 
 if __name__ == '__main__':
     pure_pursuit()
-
 

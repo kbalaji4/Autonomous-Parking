@@ -73,15 +73,16 @@ def generate(curr_x, curr_y, curr_yaw, distance, step=0.5, output_file="waypoint
 
     print(f"Waypoints saved to {output_file}")
         
-def main():
-    rospy.Subscriber("/septentrio_gnss/navsatfix", NavSatFix, gnss_callback)
-    rospy.Subscriber("/septentrio_gnss/insnavgeod", INSNavGeod, ins_callback)
-    wait_for_pose()
+def run(clat, clon, cheading):
     global lat, lon, heading
+    lat = clat   
+    lon = clon
+    heading = cheading
     curr_x, curr_y, curr_yaw = get_gem_state()
+    print(f"Current position: x={curr_x}, y={curr_y}, yaw={curr_yaw}")
     generate(curr_x, curr_y, curr_yaw, 10.0, step=0.5, output_file="waypoints_test.csv")
     
 if __name__ == "__main__":
-    main()
+    run()
     
     

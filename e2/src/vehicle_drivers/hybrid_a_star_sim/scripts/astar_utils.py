@@ -328,6 +328,13 @@ def save_path_to_csv(path, start, goal, filename=None):
         writer.writerow(['goal', goal[0], goal[1], goal[2]])
         for x, y, yaw in path:
             writer.writerow(['path', x, y, yaw])
+    # with open("path_planner_latest.csv", 'w', newline='') as csvfile1:
+    #     writer = csv.writer(csvfile1)
+    #     writer.writerow(['type', 'x', 'y', 'yaw'])
+    #     writer.writerow(['start', start[0], start[1], start[2]])
+    #     writer.writerow(['goal', goal[0], goal[1], goal[2]])
+    #     for x, y, yaw in path:
+    #         writer.writerow(['path', x, y, yaw])
     
     return filename
 
