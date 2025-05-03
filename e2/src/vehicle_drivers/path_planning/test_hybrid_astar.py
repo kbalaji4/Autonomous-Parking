@@ -266,6 +266,7 @@ def main():
         state.pos[2] = np.degrees(state.pos[2])  # Convert yaw to degrees
         # Normalize yaw to [0, 360)
         state.pos[2] = state.pos[2] % 360.0
+        state.pos[2] = (90-state.pos[2]) % 360.0
     
     # Downsample path for waypoints (use smaller step for shorter paths)
     step = max(1, len(path) // 50)  # Ensure we get at least 30 points
