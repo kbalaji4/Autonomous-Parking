@@ -8,6 +8,7 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   geometry_msgs
   novatel_gps_msgs
+  waypoint_msgs
   nav_msgs
   std_msgs
   tf

@@ -4,6 +4,7 @@
 # this one calls hybrid_astar_node.py each time we switch to a new waypoint we want to go to
 
 import rospy
+from waypoint_msg.msg import Waypoint, Waypoints
 from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import Bool
 from msg import Goal
@@ -49,7 +50,7 @@ class ParkingWaypointManager:
         if self.current_spot_index < len(self.parking_spots):
             x, y, yaw = self.parking_spots[self.current_spot_index]
             
-            goal_msg = ParkingGoal()
+            goal_msg = Waypoint()
             goal_msg.x = x
             goal_msg.y = y
             goal_msg.yaw = yaw
@@ -70,7 +71,8 @@ class ParkingWaypointManager:
 if __name__ == '__main__':
     try:
         manager = ParkingWaypointManager()
-        rospy.spin()
+        manager.publish_next_waypoint()
+        #rospy.spin()
     except rospy.ROSInterruptException:
         pass
 

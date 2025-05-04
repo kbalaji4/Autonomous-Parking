@@ -12,6 +12,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 from threading import Lock
 from std_msgs.msg import Int64
+from waypoint_msgs.msg import Waypoint, Waypoints
 import time
 import csv
 import pyproj
@@ -97,7 +98,14 @@ class Hybrid(object):
     
     def goal_callback(self, msg):
         """Updates the current goal waypoint and triggers path planning."""
-        self.goal = msg.data
+        print(msg.data)
+        goal_lon = msg.x
+        goal_lat = msg.y  
+        goal_yaw = msg.yaw
+        local_goal_x, local_goal_y = self.wps_to_local_xy(goal_lon, goal_lat)
+        goal_yaw_rad = self.heading_to_yaw(goal_yaw)
+        self.goal = (local_goal_x, local_goal_y, goal_yaw_rad)
+        print(self.goal)
         rospy.loginfo("📍 New goal received. Starting hybrid path planning...")
         try:
             self.start_hybrid()
@@ -123,23 +131,19 @@ class Hybrid(object):
         lat, lon = xy2ll(x, y, olat, olon)
         return lon, lat
     
-    def publish_path(path_points, offset_x, offset_y):
-        pub = rospy.Publisher('/waypoints', Path, queue_size=1, latch=True)
+    def publish_path(self, path_points, offset_x, offset_y):
+        pub = rospy.Publisher('/waypoints', W, queue_size=1, latch=True)
         rospy.sleep(1.0)
 
-        path_msg = Path()
-        path_msg.header.frame_id = "map"
-        path_msg.header.stamp = rospy.Time.now()
+        path_msg = Waypoints()
 
         for x, y, yaw in path_points:
-            pose = PoseStamped()
-            pose.header.frame_id = "map"
-            pose.pose.position.x = x - offset_x
-            pose.pose.position.y = y - offset_y
-            pose.pose.position.z = 0.0
-            pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w  = quaternion_from_euler(0.0, 0.0, yaw)
-            print(euler_from_quaternion([pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w]))
-            print(yaw)
+            pose = Waypoint()
+            pose.x = x
+            pose.y = y 
+            pose.yaw = yaw
+            # print(euler_from_quaternion([pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w]))
+            # print(yaw)
             # pose.pose.orientation.x = 0.0
             # pose.pose.orientation.y = 0.0
             # pose.pose.orientation.z = math.sin(yaw / 2.0)
@@ -425,7 +429,7 @@ class Hybrid(object):
                 # Downsample path for waypoints (use smaller step for shorter paths)
                 step = max(1, len(path) // self.num_points)  
                 path = path[::step] + [path[-1]]
-                publish_path(path)
+                self.publish_path(path)
 
                 # Save both original and smoothed paths to CSV with local coordinates and yaw in degrees
                 self.save_path_to_csv(path, 'hybrid_astar_path_original.csv', self.olat, self.olon)
@@ -452,7 +456,7 @@ if __name__ == "__main__":
         rospy.Subscriber("/current_goal_idx", Int64, hybrid.plotting_goal_callback)
         rospy.Subscriber("/septentrio_gnss/navsatfix", NavSatFix, hybrid.gnss_callback)
         rospy.Subscriber("/septentrio_gnss/insnavgeod", INSNavGeod, hybrid.ins_callback)
-        rospy.Subscriber("/goal_topic", GoalMsgType, hybrid.goal_callback)  # Replace GoalMsgType with the actual message type
+        rospy.Subscriber("/goal_topic", Waypoint, hybrid.goal_callback)  # Replace GoalMsgType with the actual message type
         rospy.spin()
     except rospy.ROSInterruptException:
         hybrid.cleanup_vehicle_tracking()
