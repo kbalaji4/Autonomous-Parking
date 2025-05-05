@@ -11,7 +11,6 @@ find_package(catkin REQUIRED COMPONENTS
   novatel_gps_msgs
   nav_msgs
   std_msgs
-  waypoint_msgs
   visualization_msgs
   tf
   filters

@@ -1,36 +1,33 @@
 #!/usr/bin/env python3
 
 import rospy
-import math
+import alvinxy.alvinxy as axy
+
+import os
+import sys
+import csv
 import numpy as np
+import math
+from time import time
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+from matplotlib.collections import PatchCollection
+import matplotlib.animation as animation
+import time
+import csv
+from threading import Lock
+
 from sensor_msgs.msg import NavSatFix
-# Fix is for e2
 from septentrio_gnss_driver.msg import INSNavGeod
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped
 from visualization_msgs.msg import Marker, MarkerArray
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
-from threading import Lock
 from std_msgs.msg import Int64
-from waypoint_msgs.msg import Waypoint, Waypoints
-import time
-import csv
-import pyproj
-import argparse
 
-import sys
-
-import os
-import csv
-import numpy as np
-from time import time
-import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
-from matplotlib.collections import PatchCollection, LineCollection
-from scipy.interpolate import splprep, splev
-import matplotlib.animation as animation
-from alvin import ll2xy, xy2ll
-from msg import Goal, Waypoint, WaypointArray
+scripts_dir = os.path.dirname(__file__)
+if scripts_dir not in sys.path:
+    sys.path.insert(0, scripts_dir)
 
 from dpp.env.grid import Grid
 from dpp.env.car import SimpleCar
@@ -53,10 +50,12 @@ class Hybrid(object):
         
         """
         self.state = (None,None,None) # x, y , yaw (radians)
-        self.goal = (None,None,None)# x, y , yaw (radians)
+        self.goal = (None,None,None) # x, y , yaw (radians)
         
         self.lon = None
         self.lat = None
+        self.heading = None
+        
         self.olat = 40.0928563
         self.olon = -88.2359994
         
@@ -88,6 +87,26 @@ class Hybrid(object):
         curr_y = local_y_curr - self.offset * np.sin(curr_yaw)
 
         self.state = (round(curr_x, 3), round(curr_y, 3), round(curr_yaw, 4))
+        
+    def update_gem_state_test(self):
+
+        # vehicle gnss heading (yaw) in degrees
+        # vehicle x, y position in fixed local frame, in meters
+        # reference point is located at the center of GNSS antennas
+        slat = 40.0928563
+        slon = -88.2359994
+        heading = 0.0
+        local_x_curr, local_y_curr = self.wps_to_local_xy(slon, slat)
+
+        # heading to yaw (degrees to radians)
+        # heading is calculated from two GNSS antennas
+        curr_yaw = self.heading_to_yaw(heading) 
+
+        # reference point is located at the center of rear axle
+        curr_x = local_x_curr - self.offset * np.cos(curr_yaw)
+        curr_y = local_y_curr - self.offset * np.sin(curr_yaw)
+
+        self.state = (round(curr_x, 3), round(curr_y, 3), round(curr_yaw, 4))
 
     def heading_to_yaw(self, heading_curr):
         if (heading_curr >= 270 and heading_curr < 360):
@@ -95,22 +114,6 @@ class Hybrid(object):
         else:
             yaw_curr = np.radians(90 - heading_curr)
         return yaw_curr
-    
-    def goal_callback(self, msg):
-        """Updates the current goal waypoint and triggers path planning."""
-        print(msg.data)
-        goal_lon = msg.x
-        goal_lat = msg.y  
-        goal_yaw = msg.yaw
-        local_goal_x, local_goal_y = self.wps_to_local_xy(goal_lon, goal_lat)
-        goal_yaw_rad = self.heading_to_yaw(goal_yaw)
-        self.goal = (local_goal_x, local_goal_y, goal_yaw_rad)
-        print(self.goal)
-        rospy.loginfo("📍 New goal received. Starting hybrid path planning...")
-        try:
-            self.start_hybrid()
-        except Exception as e:
-            rospy.logerr(f"❌ Error during hybrid path planning: {e}")
         
     def plotting_goal_callback(self,msg):
         """ 
@@ -121,120 +124,41 @@ class Hybrid(object):
         print(f"goal_idx: {msg.data}")
         self.current_goal_idx = msg.data
 
-    def wps_to_local_xy(self, lon_wp, lat_wp, olat, olon):
+    def wps_to_local_xy(self, lon_wp, lat_wp, olat=40.0928563, olon=-88.2359994):
         """Convert GNSS waypoints into local fixed frame represented in x and y"""
         x, y = ll2xy(lat_wp, lon_wp, olat, olon)
         return x, y
 
-    def local_xy_to_wps(self, x, y, olat, olon):
+    def local_xy_to_wps(self, x, y, olat=40.0928563, olon=-88.2359994):
         """Convert local x,y coordinates back to GPS coordinates"""
         lat, lon = xy2ll(x, y, olat, olon)
         return lon, lat
     
-    def publish_path(self, path_points, offset_x, offset_y):
-        pub = rospy.Publisher('/waypoints', W, queue_size=1, latch=True)
+    def publish_path(self, path_points):
+        pub = rospy.Publisher('/waypoints', Path, queue_size=1, latch=True)
         rospy.sleep(1.0)
 
-        path_msg = Waypoints()
+        path_msg = Path()
+        path_msg.header.frame_id = "map"
+        path_msg.header.stamp = rospy.Time.now()
 
-        for x, y, yaw in path_points:
-            pose = Waypoint()
-            pose.x = x
-            pose.y = y 
-            pose.yaw = yaw
-            # print(euler_from_quaternion([pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w]))
-            # print(yaw)
-            # pose.pose.orientation.x = 0.0
-            # pose.pose.orientation.y = 0.0
-            # pose.pose.orientation.z = math.sin(yaw / 2.0)
-            # pose.pose.orientation.w = math.cos(yaw / 2.0)
+        for point in path_points:
+            pose = PoseStamped()
+            pose.header.frame_id = "map"
+            pose.pose.position.x = point.pos[0]
+            pose.pose.position.y = point.pos[1]
+            pose.pose.position.z = point.pos[2] # yaw degrees
+            pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w  = quaternion_from_euler(0.0, 0.0, np.radians(point.pos[2]))
             path_msg.poses.append(pose)
-            
+
         pub.publish(path_msg)
-        rospy.loginfo(f"✅ Published {len(path_msg.poses)} waypoints to /waypoints (Gazebo frame)")
+        rospy.loginfo(f"✅ Published {len(path_msg.poses)} waypoints to /waypoints")
 
-    def smooth_path(self, path, smoothing=0.3):
-        # Not Currently Used Needs Fixing
-        """Smooth the path using B-spline interpolation"""
-        # Extract x, y coordinates
-        x = [state.pos[0] for state in path]
-        y = [state.pos[1] for state in path]
-        
-        # Extract yaw angles and convert to radians for interpolation
-        yaw = [np.radians(state.pos[2]) for state in path]
-        
-        # Check if we have enough points for smoothing
-        if len(path) < 4:
-            print("Warning: Path too short for smoothing, returning original path")
-            return path
-        
-        try:
-            # Create B-spline representation with increased smoothing
-            tck, u = splprep([x, y], s=smoothing, k=3)  # k=3 for cubic spline
-            
-            # Generate more points for smoother curve
-            # Increase the number of points by a factor of 4
-            u_new = np.linspace(0, 1, len(path) * 4)
-            x_new, y_new = splev(u_new, tck)
-            
-            # Calculate yaw angles for new points using central differences
-            dx = np.gradient(x_new)
-            dy = np.gradient(y_new)
-            yaw_new = np.arctan2(dy, dx)
-            
-            # Ensure smooth yaw transition
-            # Calculate the target yaw change
-            start_yaw = np.radians(path[0].pos[2])
-            end_yaw = np.radians(path[-1].pos[2])
-            
-            # Create a smooth yaw transition
-            yaw_progress = np.linspace(0, 1, len(x_new))
-            yaw_transition = start_yaw + (end_yaw - start_yaw) * yaw_progress
-            
-            # Blend between path-based yaw and target yaw
-            blend_weight = np.exp(-5 * (yaw_progress - 0.5)**2)  # Gaussian blend
-            yaw_new = (1 - blend_weight) * yaw_transition + blend_weight * yaw_new
-            
-            # Create new path with smoothed points
-            smoothed_path = []
-            for i in range(len(x_new)):
-                pos = [x_new[i], y_new[i], np.degrees(yaw_new[i])]
-                state = path[0].__class__(pos, path[0].model)  # Create new state with same class
-                smoothed_path.append(state)
-            
-            # Ensure start and end yaw angles are exactly as specified
-            smoothed_path[0].pos[2] = path[0].pos[2]
-            smoothed_path[-1].pos[2] = path[-1].pos[2]
-            
-            # Print statistics about the smoothing
-            print(f"Original path points: {len(path)}")
-            print(f"Smoothed path points: {len(smoothed_path)}")
-            
-            return smoothed_path
-        except Exception as e:
-            print(f"Warning: Path smoothing failed: {str(e)}")
-            print("Returning original path")
-            return path
-
-    def save_path_to_csv(self, path, filename, olat, olon):
-        """Save path waypoints to a CSV file with local coordinates and yaw in degrees"""
-        # Create waypoints directory if it doesn't exist
-        os.makedirs('waypoints', exist_ok=True)
-        
-        # Full path to the CSV file
-        filepath = os.path.join('waypoints', filename)
-        
-        # Write path data to CSV
-        with open(filepath, 'w', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-
-            # Write waypoints
-            for state in path:
-                writer.writerow([round(state.pos[0], 3), round(state.pos[1], 3), round(state.pos[2], 3)])
+    
 
     def wait_for_pose(self):
         """Wait for the vehicle's GPS and IMU data to be available"""
-        while not rospy.is_shutdown() and (self.state[0] is None or self.state[2] is None):
+        while not rospy.is_shutdown() and (self.state[0] is None or self.state[1] is None or self.state[2] is None):
             rospy.sleep(0.1)
             
     def save_vehicle_position(self):
@@ -336,6 +260,22 @@ class Hybrid(object):
         anim = animation.FuncAnimation(fig, animate, frames=frames, interval=50, blit=True)
         plt.title("GEM e2 Path Planning Visualization")
         plt.show()
+    
+    def save_path_to_csv(self, path, filename, olat, olon):
+        """Save path waypoints to a CSV file with local coordinates and yaw in degrees"""
+        # Create waypoints directory if it doesn't exist
+        os.makedirs('waypoints', exist_ok=True)
+        
+        # Full path to the CSV file
+        filepath = os.path.join('waypoints', filename)
+        
+        # Write path data to CSV
+        with open(filepath, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+
+            # Write waypoints
+            for state in path:
+                writer.writerow([round(state.pos[0], 3), round(state.pos[1], 3), round(state.pos[2], 3)])
 
 
     """
@@ -346,18 +286,20 @@ class Hybrid(object):
         # plot which waypoint the current position is following 
         self.setup_vehicle_tracking() # plotting vehicle trajectory
         
+        rospy.init_node("hybrid_astar_node")
+        rospy.Subscriber("/current_goal_idx", Int64, hybrid.plotting_goal_callback)
+        rospy.Subscriber("/septentrio_gnss/navsatfix", NavSatFix, hybrid.gnss_callback)
+        rospy.Subscriber("/septentrio_gnss/insnavgeod", INSNavGeod, hybrid.ins_callback)
+        
         rospy.loginfo("⌛ Waiting for GPS and IMU...")
         self.wait_for_pose()
         rospy.loginfo("✅ Received live GPS and IMU.")
         # Set origin GPS coordinates
         
         self.update_gem_state()
-        # Convert yaw angles from degrees to radians
-        start_yaw_rad = self.state[2]
-        goal_yaw_rad = self.goal[2]  # Already in radians
-        
-        start_x, start_y = self.state[0], self.state[1]
-        goal_x, goal_y = self.goal[0], self.goal[1]
+       
+        start_x, start_y, start_yaw = self.state
+        goal_x, goal_y, goal_yaw = self.goal
         
         # Calculate environment size and center
         dx = abs(goal_x - start_x)
@@ -377,8 +319,8 @@ class Hybrid(object):
         
         # Initialize environment and car with shifted coordinates and yaw angles
         env = Environment(self.obs, lx=env_size, ly=env_size)  # Set environment size based on coordinates
-        start_pos = [start_x_shifted, start_y_shifted, start_yaw_rad]  # Initial yaw in radians
-        goal_pos = [goal_x_shifted, goal_y_shifted, goal_yaw_rad]     # Final yaw in radians
+        start_pos = [start_x_shifted, start_y_shifted, start_yaw]  # Initial yaw in radians
+        goal_pos = [goal_x_shifted, goal_y_shifted, goal_yaw]     # Final yaw in radians
         car = SimpleCar(env, start_pos, goal_pos)
         
         # Update car parameters to match GEM e2 specs
@@ -409,10 +351,10 @@ class Hybrid(object):
             print(f"Environment size: {env_size:.2f}m x {env_size:.2f}m")
             print(f"Cell size: {cell_size:.2f}m")
             print(f"Environment center: x={center_x:.2f}, y={center_y:.2f}")
-            print(f"Start position (local): x={start_x:.2f}, y={start_y:.2f}, yaw={start_yaw_deg:.3f}°")
-            print(f"Goal position (local): x={goal_x:.2f}, y={goal_y:.2f}, yaw={goal_yaw_deg:.3f}°")
-            print(f"Start position (shifted): x={start_x_shifted:.2f}, y={start_y_shifted:.2f}, yaw={start_yaw_deg:.3f}°")
-            print(f"Goal position (shifted): x={goal_x_shifted:.2f}, y={goal_y_shifted:.2f}, yaw={goal_yaw_deg:.3f}°")
+            print(f"Start position (local): x={start_x:.2f}, y={start_y:.2f}, yaw={start_yaw:.3f}°")
+            print(f"Goal position (local): x={goal_x:.2f}, y={goal_y:.2f}, yaw={goal_yaw:.3f}°")
+            print(f"Start position (shifted): x={start_x_shifted:.2f}, y={start_y_shifted:.2f}, yaw={start_yaw:.3f}°")
+            print(f"Goal position (shifted): x={goal_x_shifted:.2f}, y={goal_y_shifted:.2f}, yaw={goal_yaw:.3f}°")
             t = time()
             path, closed_ = hastar.search_path(heu=1, extra=True)
             print('Total time: {}s'.format(round(time()-t, 3)))
@@ -433,14 +375,10 @@ class Hybrid(object):
 
                 # Save both original and smoothed paths to CSV with local coordinates and yaw in degrees
                 self.save_path_to_csv(path, 'hybrid_astar_path_original.csv', self.olat, self.olon)
-                #save_path_to_csv(smoothed_path, 'hybrid_astar_path_smoothed.csv', olat, olon)
                 print(f"Paths saved to waypoints/")
-                # Print some statistics
                 print(f"Number of waypoints (original): {len(path)}")
-                # Plot paths
                 print("Plotting original path...")
                 self.plot_path(env, path, closed_, self.olat, self.olon)
-                print("Plotting vehicle trajectory...")
             else:
                 rospy.logerr("❌ Path planning failed.")
             rospy.spin()
@@ -452,12 +390,9 @@ class Hybrid(object):
 if __name__ == "__main__":
     hybrid = Hybrid()
     try:
-        rospy.init_node("hybrid_astar_node")
-        rospy.Subscriber("/current_goal_idx", Int64, hybrid.plotting_goal_callback)
-        rospy.Subscriber("/septentrio_gnss/navsatfix", NavSatFix, hybrid.gnss_callback)
-        rospy.Subscriber("/septentrio_gnss/insnavgeod", INSNavGeod, hybrid.ins_callback)
-        rospy.Subscriber("/goal_topic", Waypoint, hybrid.goal_callback)  # Replace GoalMsgType with the actual message type
-        rospy.spin()
+        parking_spots = [(40.0928328, -88.2353660, np.radians(0.0))] # lon, lat, yaw (degrees)
+        hybrid.goal = parking_spots[0]
+        hybrid.start_hybrid()
     except rospy.ROSInterruptException:
         hybrid.cleanup_vehicle_tracking()
     
