@@ -61,6 +61,12 @@ class PurePursuit(object):
         self.lat        = 0.0
         self.lon        = 0.0
         self.heading    = 0.0
+        
+        self.path_points_lon_x = []
+        self.path_points_lat_y = []
+        self.path_points_heading = []
+        
+        rospy.Subscriber("/waypoints", Path, self.path_callback)
 
         self.enable_sub = rospy.Subscriber("/pacmod/as_tx/enable", Bool, self.enable_callback)
 
@@ -73,7 +79,7 @@ class PurePursuit(object):
         # read waypoints into the system 
         self.goal       = 0        
         self.goal_pub = rospy.Publisher('/current_goal_idx', Int64, queue_size=10) 
-        self.read_waypoints() 
+        #self.read_waypoints() 
 
         self.desired_speed = 1.5  # m/s, reference speed
         self.max_accel     = 0.48 # % of acceleration
@@ -137,25 +143,12 @@ class PurePursuit(object):
         # self.path_points_yaw = []
         i = 0
         for pose in msg.poses:
+            print(pose)
             x = pose.pose.position.x
             y = pose.pose.position.y
-            quat = pose.pose.orientation
-            # print(pose.pose)
-            goal_proj = pyproj.Proj(proj='utm', zone=16, ellps='WGS84')
-            x,y = goal_proj(x, y, inverse=True)
-            x, y = self.wps_to_local_xy(x, y)
-            _, _, yaw = euler_from_quaternion([quat.x, quat.y, quat.z, quat.w])
-            yaw += np.pi/2
-            print("Pose " + str(i) + " raw x: " + str(pose.pose.position.x) + "-- local_pos x: " + str(x) + " raw y: " + str(pose.pose.position.y) + " local_pos y: " + str(y)  + " yaw: " + str(yaw))
-            # print(f"yaw in hybrid a star after euler from quat: {yaw}")
-            # raw yaw is like oscillating between pi and negative pi when facing west
-            # yaw = (yaw + np.pi) % (2*np.pi) # offset by 180. 
-            # self.path_points_x.append(x)
-            # self.path_points_y.append(y)
-            
-            yaw = np.degrees(yaw)
-            self.path_points_lon_x_list.append(x)
-            self.path_points_lat_y_list.append(y)
+            yaw = pose.pose.position.z
+            self.path_points_lon_x.append(x)
+            self.path_points_lat_y.append(y)
             self.path_points_heading.append(yaw) 
             i += 1
 

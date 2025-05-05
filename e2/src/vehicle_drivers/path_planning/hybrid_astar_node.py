@@ -68,7 +68,7 @@ class Hybrid(object):
         
     def ins_callback(self, msg):
         """updates the current vehicle heading"""
-        self.state[2] = round(msg.heading, 3)
+        self.heading = round(msg.heading, 3)
         # pls be radians and modded
         
     def update_gem_state(self):
@@ -126,12 +126,12 @@ class Hybrid(object):
 
     def wps_to_local_xy(self, lon_wp, lat_wp, olat=40.0928563, olon=-88.2359994):
         """Convert GNSS waypoints into local fixed frame represented in x and y"""
-        x, y = ll2xy(lat_wp, lon_wp, olat, olon)
+        x, y = axy.ll2xy(lat_wp, lon_wp, olat, olon)
         return x, y
 
     def local_xy_to_wps(self, x, y, olat=40.0928563, olon=-88.2359994):
         """Convert local x,y coordinates back to GPS coordinates"""
-        lat, lon = xy2ll(x, y, olat, olon)
+        lat, lon = axy.xy2ll(x, y, olat, olon)
         return lon, lat
     
     def publish_path(self, path_points):
@@ -158,7 +158,7 @@ class Hybrid(object):
 
     def wait_for_pose(self):
         """Wait for the vehicle's GPS and IMU data to be available"""
-        while not rospy.is_shutdown() and (self.state[0] is None or self.state[1] is None or self.state[2] is None):
+        while not rospy.is_shutdown() and (self.lon is None or self.lat is None or self.heading is None):
             rospy.sleep(0.1)
             
     def save_vehicle_position(self):
@@ -263,17 +263,10 @@ class Hybrid(object):
     
     def save_path_to_csv(self, path, filename, olat, olon):
         """Save path waypoints to a CSV file with local coordinates and yaw in degrees"""
-        # Create waypoints directory if it doesn't exist
         os.makedirs('waypoints', exist_ok=True)
-        
-        # Full path to the CSV file
         filepath = os.path.join('waypoints', filename)
-        
-        # Write path data to CSV
         with open(filepath, 'w', newline='') as csvfile:
             writer = csv.writer(csvfile)
-
-            # Write waypoints
             for state in path:
                 writer.writerow([round(state.pos[0], 3), round(state.pos[1], 3), round(state.pos[2], 3)])
 
@@ -284,7 +277,7 @@ class Hybrid(object):
     """
     def start_hybrid(self):
         # plot which waypoint the current position is following 
-        self.setup_vehicle_tracking() # plotting vehicle trajectory
+        #self.setup_vehicle_tracking() # plotting vehicle trajectory
         
         rospy.init_node("hybrid_astar_node")
         rospy.Subscriber("/current_goal_idx", Int64, hybrid.plotting_goal_callback)
@@ -297,6 +290,7 @@ class Hybrid(object):
         # Set origin GPS coordinates
         
         self.update_gem_state()
+        #self.update_gem_state_test() # No GPS Needed for testing
        
         start_x, start_y, start_yaw = self.state
         goal_x, goal_y, goal_yaw = self.goal
@@ -344,7 +338,7 @@ class Hybrid(object):
         hastar.w5 = 2.0   # weight for reversing
         
         try:
-            self.setup_vehicle_tracking()
+            #self.setup_vehicle_tracking()
             rospy.loginfo("🚀 Planning path from live GPS to local goal...")
             # Plan path
             print("Planning path...")
@@ -383,7 +377,8 @@ class Hybrid(object):
                 rospy.logerr("❌ Path planning failed.")
             rospy.spin()
         finally:
-            self.cleanup_vehicle_tracking()
+            pass
+            #self.cleanup_vehicle_tracking()
         
       
         
