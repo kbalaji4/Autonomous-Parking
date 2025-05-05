@@ -181,16 +181,26 @@ def main():
     olon = -88.2359994
     
     # Create test case
-    tc = TestCase()
+    #tc = TestCase()
+    
+    
+    
+   
+
+
+
+    print(wps_to_local_xy(-88.235190, 40.092727,  olat, olon))
+    print(wps_to_local_xy(-88.236153, 40.092898,  olat, olon))
+
     
     # Define start and goal GPS coordinates and yaw angles (in degrees)
-    slat = 40.0928563
-    slon = -88.2359994
+    slat =  olat
+    slon = olon
     start_yaw_deg = 0.0  # Start yaw in degrees (facing East)
     
     glat = 40.0928328
     glon = -88.2353660
-    goal_yaw_deg = 0.0  # Goal yaw in degrees (facing South)
+    goal_yaw_deg = 180  # Goal yaw in degrees (facing South)
     
     # Convert yaw angles from degrees to radians
     start_yaw_rad = np.radians(start_yaw_deg)
@@ -200,26 +210,48 @@ def main():
     start_x, start_y = wps_to_local_xy(slon, slat, olat, olon)
     goal_x, goal_y = wps_to_local_xy(glon, glat, olat, olon)
     
-    # Calculate environment size and center
-    dx = abs(goal_x - start_x)
-    dy = abs(goal_y - start_y)
-    env_size = max(dx, dy) * 2.0  # Make it twice as large as needed
-    env_size = max(env_size, 100.0)  # Ensure minimum size of 100m
+    # # Calculate environment size and center
+    # dx = abs(goal_x - start_x)
+    # dy = abs(goal_y - start_y)
+    # env_size = max(dx, dy) * 2.0  # Make it twice as large as needed
+    # env_size = max(env_size, 100.0)  # Ensure minimum size of 100m
     
-    # Calculate center point
-    center_x = (start_x + goal_x) / 2.0
-    center_y = (start_y + goal_y) / 2.0
+    # # Calculate center point
+    # center_x = (start_x + goal_x) / 2.0
+    # center_y = (start_y + goal_y) / 2.0
     
-    # Shift coordinates relative to center
-    start_x_shifted = start_x - center_x + env_size/2
-    start_y_shifted = start_y - center_y + env_size/2
-    goal_x_shifted = goal_x - center_x + env_size/2
-    goal_y_shifted = goal_y - center_y + env_size/2
+    # # Shift coordinates relative to center
+    # start_x_shifted = start_x - center_x + env_size/2
+    # start_y_shifted = start_y - center_y + env_size/2
+    # goal_x_shifted = goal_x - center_x + env_size/2
+    # goal_y_shifted = goal_y - center_y + env_size/2
     
-    # Initialize environment and car with shifted coordinates and yaw angles
-    env = Environment(tc.obs, lx=env_size, ly=env_size)  # Set environment size based on coordinates
+    # # Initialize environment and car with shifted coordinates and yaw angles
+    # env = Environment(tc.obs, lx=100, ly=100)  # Set environment size based on coordinates
+    
+    grid_top_left = (-25, 10)
+    grid_bottom_right = (85, -20)
+    lx = grid_bottom_right[0] - grid_top_left[0]  # 110m
+    ly = grid_top_left[1] - grid_bottom_right[1]  # 30m
+
+    # Initialize environment with static grid dimensions
+    obs = [[0 ,25.5, 110, 0.1],[94,0,0.1,30],[12,0,0.1,30],[0 ,5, 110, 0.1]]
+    env = Environment(obs, lx=lx, ly=ly)
+    print(start_y)
+    print(goal_y)
+    
+    
+    # Shift coordinates relative to the static grid's top-left corner
+    start_x_shifted = start_x - grid_top_left[0]
+    start_y_shifted = ly - (grid_top_left[1] - start_y)  # Flip y-axis
+    goal_x_shifted = goal_x - grid_top_left[0]
+    goal_y_shifted = grid_top_left[1] - goal_y  # Flip y-axis
+    
+    
+    
     start_pos = [start_x_shifted, start_y_shifted, start_yaw_rad]  # Initial yaw in radians
-    goal_pos = [goal_x_shifted, goal_y_shifted, goal_yaw_rad]     # Final yaw in radians
+    #goal_pos = [goal_x_shifted, goal_y_shifted, goal_yaw_rad]     # Final yaw in radians
+    goal_pos = [90,10,goal_yaw_rad]
     car = SimpleCar(env, start_pos, goal_pos)
     
     # Update car parameters to match GEM e2 specs
@@ -229,24 +261,24 @@ def main():
     car.max_phi = 0.5  # Maximum steering angle
     
     # Adjust grid size based on environment size
-    cell_size = max(0.25, env_size / 200)  # Ensure reasonable number of cells
+    cell_size = max(0.25, lx / 200)  # Ensure reasonable number of cells
     grid = Grid(env, cell_size=cell_size)
     
     # Initialize hybrid A* planner with modified parameters for smoother paths
     hastar = HybridAstar(car, grid, reverse=True)
     
-    # Modify weights to prioritize orientation
-    hastar.w1 = 0.8   # weight for astar heuristic
-    hastar.w2 = 0.2   # weight for simple heuristic
-    hastar.w3 = 0.8   # increased weight for steering angle change
-    hastar.w4 = 0.6   # increased weight for turning
-    hastar.w5 = 2.0   # weight for reversing
+    # #Modify weights to prioritize orientation
+    # hastar.w1 = 0.8   # weight for astar heuristic
+    # hastar.w2 = 0.2   # weight for simple heuristic
+    # hastar.w3 = 0.8   # increased weight for steering angle change
+    # hastar.w4 = 0.6   # increased weight for turning
+    # hastar.w5 = 2   # weight for reversing
     
     # Plan path
     print("Planning path...")
-    print(f"Environment size: {env_size:.2f}m x {env_size:.2f}m")
+    #print(f"Environment size: {env_size:.2f}m x {env_size:.2f}m")
     print(f"Cell size: {cell_size:.2f}m")
-    print(f"Environment center: x={center_x:.2f}, y={center_y:.2f}")
+    #print(f"Environment center: x={center_x:.2f}, y={center_y:.2f}")
     print(f"Start position (local): x={start_x:.2f}, y={start_y:.2f}, yaw={start_yaw_deg:.3f}°")
     print(f"Goal position (local): x={goal_x:.2f}, y={goal_y:.2f}, yaw={goal_yaw_deg:.3f}°")
     print(f"Start position (shifted): x={start_x_shifted:.2f}, y={start_y_shifted:.2f}, yaw={start_yaw_deg:.3f}°")
@@ -261,8 +293,10 @@ def main():
     
     # Convert path back to original coordinates and yaw to degrees
     for state in path:
-        state.pos[0] = state.pos[0] + center_x - env_size/2
-        state.pos[1] = state.pos[1] + center_y - env_size/2
+        state.pos[0] = state.pos[0] + grid_top_left[0]
+        state.pos[1] = grid_top_left[1] - state.pos[1]
+        # state.pos[0] = state.pos[0] + center_x - env_size/2
+        # state.pos[1] = state.pos[1] + center_y - env_size/2
         state.pos[2] = np.degrees(state.pos[2])  # Convert yaw to degrees
         # Normalize yaw to [0, 360)
         state.pos[2] = state.pos[2] % 360.0

@@ -23,7 +23,7 @@ class TestCase:
             [0, 6, 3.5, 0.1],
             [5, 6, 5, 0.1]
         ]
-        self.obs = []
+        
 
     # 30 * 15
     # def __init__(self):

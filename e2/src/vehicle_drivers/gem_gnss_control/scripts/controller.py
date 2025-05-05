@@ -289,7 +289,29 @@ class PurePursuit(object):
                     rospy.loginfo("Goal waypoint reached. Stopping the car.")
                     self.stop_car()
                     break  # Exit the loop to stop the controller
-
+            
+            ### May allow vehicle to go backward if the waypoint is behind ###
+            waypoint_vector = [self.path_points_x[self.goal] - curr_x, self.path_points_y[self.goal] - curr_y]
+            vehicle_heading_vector = [np.cos(curr_yaw), np.sin(curr_yaw)]
+            angle_to_waypoint = self.find_angle(vehicle_heading_vector, waypoint_vector)
+            if abs(angle_to_waypoint) > np.pi / 2:
+                if self.gear_cmd.ui16_cmd != 1:
+                    rospy.loginfo("Waypoint is behind. Stopping the car to switch to reverse gear.")
+                    self.stop_car()
+                    rospy.sleep(1)
+                    rospy.loginfo("Waypoint is behind. Switching to reverse gear.")
+                    self.gear_cmd.ui16_cmd = 1 # Reverse
+                    self.gear_pub.publish(self.gear_cmd)
+            else:
+                if self.gear_cmd.ui16_cmd != 3:
+                    rospy.loginfo("Waypoint is ahead. Stopping the car to switch to forward gear.")
+                    self.stop_car()
+                    rospy.sleep(1)
+                    rospy.loginfo("Waypoint is ahead. Switching to forward gear.")
+                    self.gear_cmd.ui16_cmd = 3
+                    self.gear_pub.publish(self.gear_cmd)
+            ### Needs testing ###
+            
             # finding the distance of each way point from the current position
             for i in range(len(self.path_points_x)):
                 self.dist_arr[i] = self.dist((self.path_points_x[i], self.path_points_y[i]), (curr_x, curr_y))
