@@ -77,6 +77,7 @@ class PurePursuit(object):
         self.olon       = -88.2359994
 
         # read waypoints into the system 
+        self.goal_reached_threshold = 0.5 # meters
         self.goal       = 0        
         self.goal_pub = rospy.Publisher('/current_goal_idx', Int64, queue_size=10) 
         #self.read_waypoints() 
@@ -165,6 +166,14 @@ class PurePursuit(object):
         else:
             yaw_curr = np.radians(90 - heading_curr)
         return yaw_curr
+    
+    def stop_car(self):
+        """Stop the car by applying brakes and disabling acceleration."""
+        self.brake_cmd.f64_cmd = 1.0  # Apply full brake
+        self.accel_cmd.f64_cmd = 0.0  # Disable acceleration
+        self.brake_pub.publish(self.brake_cmd)
+        self.accel_pub.publish(self.accel_cmd)
+        rospy.loginfo("Car stopped.")
 
     def front2steer(self, f_angle):
         if(f_angle > 35):
@@ -270,6 +279,16 @@ class PurePursuit(object):
             self.path_points_y = np.array(self.path_points_lat_y)
 
             curr_x, curr_y, curr_yaw = self.get_gem_state()
+            
+            if self.goal < len(self.path_points_x):
+                goal_x = self.path_points_x[self.goal]
+                goal_y = self.path_points_y[self.goal]
+                distance_to_goal = self.dist((curr_x, curr_y), (goal_x, goal_y))
+
+                if distance_to_goal < self.goal_reached_threshold:
+                    rospy.loginfo("Goal waypoint reached. Stopping the car.")
+                    self.stop_car()
+                    break  # Exit the loop to stop the controller
 
             # finding the distance of each way point from the current position
             for i in range(len(self.path_points_x)):

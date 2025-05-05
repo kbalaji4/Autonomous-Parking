@@ -349,9 +349,9 @@ class Hybrid(object):
             print(f"Goal position (local): x={goal_x:.2f}, y={goal_y:.2f}, yaw={goal_yaw:.3f}°")
             print(f"Start position (shifted): x={start_x_shifted:.2f}, y={start_y_shifted:.2f}, yaw={start_yaw:.3f}°")
             print(f"Goal position (shifted): x={goal_x_shifted:.2f}, y={goal_y_shifted:.2f}, yaw={goal_yaw:.3f}°")
-            t = time()
             path, closed_ = hastar.search_path(heu=1, extra=True)
-            print('Total time: {}s'.format(round(time()-t, 3)))
+            # t = time()
+            # print('Total time: {}s'.format(round(time()-t, 3)))
 
             if path:
                 for point in path:
