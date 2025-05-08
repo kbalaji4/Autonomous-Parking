@@ -83,8 +83,11 @@ class Hybrid(object):
         # heading to yaw (degrees to radians)
         # heading is calculated from two GNSS antennas
         print(self.heading)
-        curr_yaw = (360-(self.heading-90)) % 360.0
+        # curr_yaw = (450-self.heading) % 360.0
+        # curr_yaw = np.degrees(self.heading_to_yaw(self.heading))
+        curr_yaw = (450-self.heading) % 360.0
         #curr_yaw = self.heading_to_yaw(start_yaw) 
+        print("curr yaw: ", curr_yaw)
 
         # reference point is located at the center of rear axle
         curr_x = local_x_curr #- self.offset * np.cos(curr_yaw)

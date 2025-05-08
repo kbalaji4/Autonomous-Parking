@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(path_planning)
+project(perception)
 
 find_package(catkin REQUIRED COMPONENTS
   cv_bridge
@@ -24,7 +24,6 @@ include_directories(
 )
 
 catkin_install_python(PROGRAMS
-  hybrid_astar_node.py
-  plot_map_node.py
+  camera_detection_node.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 ) 

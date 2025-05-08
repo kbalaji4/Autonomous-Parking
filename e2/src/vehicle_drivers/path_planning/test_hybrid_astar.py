@@ -189,7 +189,7 @@ def main():
 
 
 
-    print(wps_to_local_xy(-88.235190, 40.092727,  olat, olon))
+    print(wps_to_local_xy(-88.235711, 40.092788,  olat, olon))
     print(wps_to_local_xy(-88.236153, 40.092898,  olat, olon))
 
     
