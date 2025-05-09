@@ -50,9 +50,10 @@ class PurePursuit(object):
 
         self.rate       = rospy.Rate(10)
 
-        self.look_ahead = 4
+        self.look_ahead = 2.0  # Reduced from 3.0 to 2.0 for tighter waypoint following
         self.wheelbase  = 1.75 # meters
         self.offset     = 0.46 # meters
+        self.goal_reached_threshold = 0.3  # Reduced from 0.5 to 0.3 for more precise waypoint following
 
         self.gnss_sub_old   = rospy.Subscriber("/novatel/inspva", Inspva, self.inspva_callback)
         # we replaced novatel hardware with septentrio hardware on e2
@@ -77,7 +78,6 @@ class PurePursuit(object):
         self.olon       = -88.2359994
 
         # read waypoints into the system 
-        self.goal_reached_threshold = 0.5 # meters
         self.goal       = 0        
         self.goal_pub = rospy.Publisher('/current_goal_idx', Int64, queue_size=10) 
         #self.read_waypoints() 
@@ -317,7 +317,7 @@ class PurePursuit(object):
                 self.dist_arr[i] = self.dist((self.path_points_x[i], self.path_points_y[i]), (curr_x, curr_y))
 
             # finding those points which are less than the look ahead distance (will be behind and ahead of the vehicle)
-            goal_arr = np.where( (self.dist_arr < self.look_ahead + 0.3) & (self.dist_arr > self.look_ahead - 0.3) )[0]
+            goal_arr = np.where( (self.dist_arr < self.look_ahead + 0.2) & (self.dist_arr > self.look_ahead - 0.2) )[0]
 
             # finding the goal point which is the last in the set of points less than the lookahead distance
             for idx in goal_arr:
@@ -326,8 +326,19 @@ class PurePursuit(object):
                 temp_angle = self.find_angle(v1,v2)
                 # find correct look-ahead point by using heading information
                 if abs(temp_angle) < np.pi/2:
-                    self.goal = idx
+                    # Ensure we're not jumping too far ahead
+                    if idx > self.goal + 5:  # Limit how far ahead we can look
+                        self.goal = self.goal + 1
+                    else:
+                        self.goal = idx
                     break
+
+            # If we're close to the current goal, move to the next one
+            if self.goal < len(self.path_points_x) - 1:
+                distance_to_current_goal = self.dist((self.path_points_x[self.goal], self.path_points_y[self.goal]), (curr_x, curr_y))
+                if distance_to_current_goal < self.goal_reached_threshold:
+                    self.goal += 1
+
             self.goal_pub.publish(Int64(self.goal))
             # finding the distance between the goal point and the vehicle
             # true look-ahead distance between a waypoint and current position
@@ -337,7 +348,7 @@ class PurePursuit(object):
             alpha = self.heading_to_yaw(self.path_points_heading[self.goal]) - curr_yaw
 
             # ----------------- tuning this part as needed -----------------
-            k       = 0.41 
+            k       = 0.65  # Increased from 0.55 to 0.65 for more aggressive turning
             angle_i = math.atan((k * 2 * self.wheelbase * math.sin(alpha)) / L) 
             angle   = angle_i*2
             # ----------------- tuning this part as needed -----------------

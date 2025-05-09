@@ -293,19 +293,24 @@ class Hybrid(object):
         self.update_gem_state()
         #self.update_gem_state_test() # No GPS Needed for testing
         map = Map()
-        #map.add_walls() #if you want parking spots
+        map.add_walls() #if you want parking spots
        
         start_x, start_y, start_yaw = self.state
         goal_lon, goal_lat, goal_yaw = self.goal
         
         goal_yaw = self.car_heading_to_planner_yaw(goal_yaw) # radians
-        goal_x, goal_y = self.wps_to_local_xy(goal_lon, goal_lat, self.olat, self.olon)
-        goal_x, goal_y = self.wps_to_local_xy(goal_x, goal_y)
+        print(goal_yaw)
+        goal_x, goal_y = self.wps_to_local_xy(goal_lon, goal_lat)
+
+
         
         start_x_shifted = start_x - map.grid_top_left[0]
         start_y_shifted = map.ly - (map.grid_top_left[1] - start_y)  # Flip y-axis
         goal_x_shifted = goal_x - map.grid_top_left[0]
-        goal_y_shifted = map.ly - (map.grid_top_left[1] - goal_y)  # Flip y-axis
+        goal_y_shifted = map.ly - (map.grid_top_left[1] - goal_y)  # Flip y-axis\\
+
+        print(start_x_shifted, start_y_shifted)
+        print(goal_x_shifted, goal_y_shifted)
         
         # Initialize environment and car with shifted coordinates and yaw angles
         env = Environment(map.obs, lx=map.lx, ly=map.ly)  # Set environment size based on coordinates
@@ -317,7 +322,7 @@ class Hybrid(object):
         car.l = 1.75  # Wheelbase: 69 in = 1.75m
         car.carl = 2.62  # Length: 103 in = 2.62m
         car.carw = 1.41  # Width: 55.5 in = 1.41m
-        car.max_phi = 0.5  # Maximum steering angle
+        car.max_phi = 0.7  # Increased maximum steering angle from 0.5 to 0.7
         
         # Adjust grid size based on environment size
         #cell_size = max(0.25, env_size / 200)  # Ensure reasonable number of cells
@@ -326,12 +331,12 @@ class Hybrid(object):
         # Initialize hybrid A* planner with modified parameters for smoother paths
         hastar = HybridAstar(car, grid, reverse=True)
         
-        # Modify weights to prioritize orientation
-        hastar.w1 = 0.8   # weight for astar heuristic
-        hastar.w2 = 0.2   # weight for simple heuristic
-        hastar.w3 = 0.8   # increased weight for steering angle change
-        hastar.w4 = 0.6   # increased weight for turning
-        hastar.w5 = 2.0   # weight for reversing
+        # Modify weights to prioritize tighter turns and better orientation
+        hastar.w1 = 0.6   # Reduced weight for astar heuristic to allow more exploration
+        hastar.w2 = 0.4   # Increased weight for simple heuristic to favor direct paths
+        hastar.w3 = 0.6   # Reduced weight for steering angle change to allow sharper turns
+        hastar.w4 = 0.8   # Increased weight for turning to prioritize orientation
+        hastar.w5 = 1.5   # Reduced weight for reversing to allow more aggressive maneuvers
         
         try:
             #self.setup_vehicle_tracking()
@@ -348,16 +353,17 @@ class Hybrid(object):
             path, closed_ = hastar.search_path(heu=1, extra=True)
             # t = time()
             # print('Total time: {}s'.format(round(time()-t, 3)))
-
-            for state in path:
-                state.pos[0] = state.pos[0] + map.grid_top_left[0]
-                state.pos[1] = map.grid_top_left[1] - state.pos[1]
-                # state.pos[0] = state.pos[0] + center_x - env_size/2
-                # state.pos[1] = state.pos[1] + center_y - env_size/2
-                state.pos[2] = np.degrees(state.pos[2])  # Convert yaw to degrees
-                # Normalize yaw to [0, 360)
-                state.pos[2] = state.pos[2] % 360.0
-                state.pos[2] = (90-state.pos[2]) % 360.0
+            if path:
+                for state in path:
+                    state.pos[0] = state.pos[0] + map.grid_top_left[0]
+                    state.pos[1] = map.grid_top_left[1] - state.pos[1]
+                    # state.pos[0] = state.pos[0] + center_x - env_size/2
+                    # state.pos[1] = state.pos[1] + center_y - env_size/2
+                    state.pos[2] = np.degrees(state.pos[2])  # Convert yaw to degrees
+                    # Normalize yaw to [0, 360)
+                    state.pos[2] = state.pos[2] % 360.0
+                    state.pos[2] = (90-state.pos[2]) % 360.0
+                    
                 
                 # Downsample path for waypoints (use smaller step for shorter paths)
                 step = max(1, len(path) // self.num_points)  
@@ -385,10 +391,10 @@ if __name__ == "__main__":
         # lon, lat, yaw (degrees)
         parking_spots = [
             (-88.2353660,40.0928328, 90), # spot facing east
-            (-88.235317,40.092751,141.43) # angle parking spot (not supported with walls)
+            (-88.235317,40.092751,141.43), # angle parking spot (not supported with walls)
             (-88.235711,40.092788,180)  # Yellow main parking spot facing south  
             ] 
-        hybrid.goal = parking_spots[1]
+        hybrid.goal = parking_spots[2]
         hybrid.start_hybrid()
     except rospy.ROSInterruptException:
         hybrid.cleanup_vehicle_tracking()
