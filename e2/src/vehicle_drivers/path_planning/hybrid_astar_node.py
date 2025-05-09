@@ -34,6 +34,7 @@ from dpp.env.car import SimpleCar
 from dpp.env.environment import Environment
 from dpp.test_cases.cases import TestCase
 from dpp.methods.hybrid_astar import HybridAstar
+from alvin import ll2xy, xy2ll
 
 class Hybrid(object):
     def __init__(self):
@@ -60,6 +61,7 @@ class Hybrid(object):
         self.olon = -88.2359994
         
         self.obs = []
+        self.offset = 0.46
         self.num_points = 50
         
     def gnss_callback(self, msg):
@@ -80,33 +82,31 @@ class Hybrid(object):
 
         # heading to yaw (degrees to radians)
         # heading is calculated from two GNSS antennas
-        curr_yaw = self.heading_to_yaw(self.heading) 
+        print(self.heading)
+        curr_yaw = self.car_heading_to_planner_yaw(self.heading) # this outputs radians too
+        #curr_yaw = self.heading_to_yaw(start_yaw) 
+        print("curr yaw: ", np.degrees(curr_yaw), curr_yaw)
 
         # reference point is located at the center of rear axle
-        curr_x = local_x_curr - self.offset * np.cos(curr_yaw)
-        curr_y = local_y_curr - self.offset * np.sin(curr_yaw)
+        curr_x = local_x_curr #- self.offset * np.cos(curr_yaw)
+        curr_y = local_y_curr #- self.offset * np.sin(curr_yaw)
 
         self.state = (round(curr_x, 3), round(curr_y, 3), round(curr_yaw, 4))
         
-    def update_gem_state_test(self):
-
-        # vehicle gnss heading (yaw) in degrees
-        # vehicle x, y position in fixed local frame, in meters
-        # reference point is located at the center of GNSS antennas
-        slat = 40.0928563
-        slon = -88.2359994
-        heading = 0.0
-        local_x_curr, local_y_curr = self.wps_to_local_xy(slon, slat)
-
-        # heading to yaw (degrees to radians)
-        # heading is calculated from two GNSS antennas
-        curr_yaw = self.heading_to_yaw(heading) 
-
-        # reference point is located at the center of rear axle
-        curr_x = local_x_curr - self.offset * np.cos(curr_yaw)
-        curr_y = local_y_curr - self.offset * np.sin(curr_yaw)
-
-        self.state = (round(curr_x, 3), round(curr_y, 3), round(curr_yaw, 4))
+    def car_heading_to_planner_yaw(self, yaw):
+        """
+        input: yaw is degrees
+        yaw is car (0 north, CW)
+        convert to planner (0 east, CCW)
+        output: RADIANS
+        """
+        planner_yaw = 0.0
+        if yaw <= 90.0:
+            planner_yaw = 90 - yaw
+        else:
+            planner_yaw = 450 - yaw
+        
+        return np.radians(planner_yaw % 360.0) # none should be negative anyway
 
     def heading_to_yaw(self, heading_curr):
         if (heading_curr >= 270 and heading_curr < 360):
@@ -121,17 +121,17 @@ class Hybrid(object):
         not to be confused with the other goal callback which tells us
         which waypoint to go to currently (multiple parking spot waypoints)
         """
-        print(f"goal_idx: {msg.data}")
+        # print(f"goal_idx: {msg.data}")
         self.current_goal_idx = msg.data
 
-    def wps_to_local_xy(self, lon_wp, lat_wp, olat=40.0928563, olon=-88.2359994):
-        """Convert GNSS waypoints into local fixed frame represented in x and y"""
-        x, y = axy.ll2xy(lat_wp, lon_wp, olat, olon)
-        return x, y
+    def wps_to_local_xy(self, lon_wp, lat_wp):
+        # convert GNSS waypoints into local fixed frame reprented in x and y
+        lon_wp_x, lat_wp_y = axy.ll2xy(lat_wp, lon_wp, self.olat, self.olon)
+        return lon_wp_x, lat_wp_y
 
-    def local_xy_to_wps(self, x, y, olat=40.0928563, olon=-88.2359994):
+    def local_xy_to_wps(self, x, y):
         """Convert local x,y coordinates back to GPS coordinates"""
-        lat, lon = axy.xy2ll(x, y, olat, olon)
+        lat, lon = xy2ll(x, y, self.olat, self.olon)
         return lon, lat
     
     def publish_path(self, path_points):
@@ -294,6 +294,10 @@ class Hybrid(object):
        
         start_x, start_y, start_yaw = self.state
         goal_x, goal_y, goal_yaw = self.goal
+
+        print(self.goal)
+        goal_x, goal_y = self.wps_to_local_xy(goal_x, goal_y)
+        
         
         # Calculate environment size and center
         dx = abs(goal_x - start_x)
@@ -357,7 +361,7 @@ class Hybrid(object):
                 for point in path:
                     point.pos[0] = point.pos[0] + center_x - env_size/2
                     point.pos[1] = point.pos[1] + center_y - env_size/2
-                    point.pos[2] = np.degrees(point.pos[2])  # Convert yaw to degrees
+                    point.pos[2] = np.degrees(point.pos[2])  # Convert yaw to degrees for plot and controller
                     # Normalize yaw to [0, 360)
                     point.pos[2] = point.pos[2] % 360.0
                     point.pos[2] = (90-point.pos[2]) % 360.0
@@ -385,8 +389,9 @@ class Hybrid(object):
 if __name__ == "__main__":
     hybrid = Hybrid()
     try:
-        parking_spots = [(40.0928328, -88.2353660, np.radians(0.0))] # lon, lat, yaw (degrees)
-        hybrid.goal = parking_spots[0]
+        parking_spots = [(-88.2353660,40.0928328, np.radians(0.0)),
+                         (-88.235317,40.092751,np.radians(360-(141.43-90)))] # lon, lat, yaw (degrees)
+        hybrid.goal = parking_spots[1]
         hybrid.start_hybrid()
     except rospy.ROSInterruptException:
         hybrid.cleanup_vehicle_tracking()
