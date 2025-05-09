@@ -196,7 +196,7 @@ def main():
     # Define start and goal GPS coordinates and yaw angles (in degrees)
     slat =  olat
     slon = olon
-    start_yaw_deg = 0.0  # Start yaw in degrees (facing East)
+    start_yaw_deg = -180.0  # Start yaw in degrees (facing East)
     
     glat = 40.0928328
     glon = -88.2353660
