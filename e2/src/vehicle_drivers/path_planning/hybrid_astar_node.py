@@ -31,6 +31,7 @@ if scripts_dir not in sys.path:
 
 from dpp.env.grid import Grid
 from dpp.env.car import SimpleCar
+from dpp.env.map import Map
 from dpp.env.environment import Environment
 from dpp.test_cases.cases import TestCase
 from dpp.methods.hybrid_astar import HybridAstar
@@ -88,8 +89,8 @@ class Hybrid(object):
         print("curr yaw: ", np.degrees(curr_yaw), curr_yaw)
 
         # reference point is located at the center of rear axle
-        curr_x = local_x_curr #- self.offset * np.cos(curr_yaw)
-        curr_y = local_y_curr #- self.offset * np.sin(curr_yaw)
+        curr_x = local_x_curr - self.offset * np.cos(curr_yaw)
+        curr_y = local_y_curr - self.offset * np.sin(curr_yaw)
 
         self.state = (round(curr_x, 3), round(curr_y, 3), round(curr_yaw, 4))
         
@@ -291,32 +292,23 @@ class Hybrid(object):
         
         self.update_gem_state()
         #self.update_gem_state_test() # No GPS Needed for testing
+        map = Map()
+        #map.add_walls() #if you want parking spots
        
         start_x, start_y, start_yaw = self.state
-        goal_x, goal_y, goal_yaw = self.goal
-
-        print(self.goal)
+        goal_lon, goal_lat, goal_yaw = self.goal
+        
+        goal_yaw = self.car_heading_to_planner_yaw(goal_yaw) # radians
+        goal_x, goal_y = self.wps_to_local_xy(goal_lon, goal_lat, self.olat, self.olon)
         goal_x, goal_y = self.wps_to_local_xy(goal_x, goal_y)
         
-        
-        # Calculate environment size and center
-        dx = abs(goal_x - start_x)
-        dy = abs(goal_y - start_y)
-        env_size = max(dx, dy) * 2.0  # Make it twice as large as needed
-        env_size = max(env_size, 100.0)  # Ensure minimum size of 100m
-        
-        # Calculate center point
-        center_x = (start_x + goal_x) / 2.0
-        center_y = (start_y + goal_y) / 2.0
-        
-        # Shift coordinates relative to center
-        start_x_shifted = start_x - center_x + env_size/2
-        start_y_shifted = start_y - center_y + env_size/2
-        goal_x_shifted = goal_x - center_x + env_size/2
-        goal_y_shifted = goal_y - center_y + env_size/2
+        start_x_shifted = start_x - map.grid_top_left[0]
+        start_y_shifted = map.ly - (map.grid_top_left[1] - start_y)  # Flip y-axis
+        goal_x_shifted = goal_x - map.grid_top_left[0]
+        goal_y_shifted = map.ly - (map.grid_top_left[1] - goal_y)  # Flip y-axis
         
         # Initialize environment and car with shifted coordinates and yaw angles
-        env = Environment(self.obs, lx=env_size, ly=env_size)  # Set environment size based on coordinates
+        env = Environment(map.obs, lx=map.lx, ly=map.ly)  # Set environment size based on coordinates
         start_pos = [start_x_shifted, start_y_shifted, start_yaw]  # Initial yaw in radians
         goal_pos = [goal_x_shifted, goal_y_shifted, goal_yaw]     # Final yaw in radians
         car = SimpleCar(env, start_pos, goal_pos)
@@ -328,8 +320,8 @@ class Hybrid(object):
         car.max_phi = 0.5  # Maximum steering angle
         
         # Adjust grid size based on environment size
-        cell_size = max(0.25, env_size / 200)  # Ensure reasonable number of cells
-        grid = Grid(env, cell_size=cell_size)
+        #cell_size = max(0.25, env_size / 200)  # Ensure reasonable number of cells
+        grid = Grid(env, cell_size= map.cell_size)
         
         # Initialize hybrid A* planner with modified parameters for smoother paths
         hastar = HybridAstar(car, grid, reverse=True)
@@ -346,9 +338,9 @@ class Hybrid(object):
             rospy.loginfo("🚀 Planning path from live GPS to local goal...")
             # Plan path
             print("Planning path...")
-            print(f"Environment size: {env_size:.2f}m x {env_size:.2f}m")
-            print(f"Cell size: {cell_size:.2f}m")
-            print(f"Environment center: x={center_x:.2f}, y={center_y:.2f}")
+            #print(f"Environment size: {env_size:.2f}m x {env_size:.2f}m")
+            print(f"Cell size: {map.cell_size:.2f}m")
+            #print(f"Environment center: x={center_x:.2f}, y={center_y:.2f}")
             print(f"Start position (local): x={start_x:.2f}, y={start_y:.2f}, yaw={start_yaw:.3f}°")
             print(f"Goal position (local): x={goal_x:.2f}, y={goal_y:.2f}, yaw={goal_yaw:.3f}°")
             print(f"Start position (shifted): x={start_x_shifted:.2f}, y={start_y_shifted:.2f}, yaw={start_yaw:.3f}°")
@@ -357,14 +349,15 @@ class Hybrid(object):
             # t = time()
             # print('Total time: {}s'.format(round(time()-t, 3)))
 
-            if path:
-                for point in path:
-                    point.pos[0] = point.pos[0] + center_x - env_size/2
-                    point.pos[1] = point.pos[1] + center_y - env_size/2
-                    point.pos[2] = np.degrees(point.pos[2])  # Convert yaw to degrees for plot and controller
-                    # Normalize yaw to [0, 360)
-                    point.pos[2] = point.pos[2] % 360.0
-                    point.pos[2] = (90-point.pos[2]) % 360.0
+            for state in path:
+                state.pos[0] = state.pos[0] + map.grid_top_left[0]
+                state.pos[1] = map.grid_top_left[1] - state.pos[1]
+                # state.pos[0] = state.pos[0] + center_x - env_size/2
+                # state.pos[1] = state.pos[1] + center_y - env_size/2
+                state.pos[2] = np.degrees(state.pos[2])  # Convert yaw to degrees
+                # Normalize yaw to [0, 360)
+                state.pos[2] = state.pos[2] % 360.0
+                state.pos[2] = (90-state.pos[2]) % 360.0
                 
                 # Downsample path for waypoints (use smaller step for shorter paths)
                 step = max(1, len(path) // self.num_points)  
@@ -389,8 +382,12 @@ class Hybrid(object):
 if __name__ == "__main__":
     hybrid = Hybrid()
     try:
-        parking_spots = [(-88.2353660,40.0928328, np.radians(0.0)), 
-                         (-88.235317,40.092751,np.radians(360-(141.43-90)))] # lon, lat, yaw (degrees)
+        # lon, lat, yaw (degrees)
+        parking_spots = [
+            (-88.2353660,40.0928328, 90), # spot facing east
+            (-88.235317,40.092751,141.43) # angle parking spot (not supported with walls)
+            (-88.235711,40.092788,180)  # Yellow main parking spot facing south  
+            ] ``
         hybrid.goal = parking_spots[1]
         hybrid.start_hybrid()
     except rospy.ROSInterruptException:

@@ -15,7 +15,6 @@ class Map:
         # 1.3716 from car center to left wall
         spot = (49.5948455962297, 12.416345388704688)
      
-        
         # self.obs.append([spot[0]+1.3716,spot[1]-(5-2.7432),0.1,5]) 
         # self.obs.append([spot[0]+1.3716-2.7432,spot[1]-(5-2.7432),0.1,5])
         # self.obs.append([spot[0]+1.3716-2.7432,spot[1]-(5-2.7432),2.7432,0.1]) 
