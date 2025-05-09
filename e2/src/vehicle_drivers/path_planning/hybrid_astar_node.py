@@ -85,7 +85,7 @@ class Hybrid(object):
         print(self.heading)
         # curr_yaw = (450-self.heading) % 360.0
         # curr_yaw = np.degrees(self.heading_to_yaw(self.heading))
-        curr_yaw = (450-self.heading) % 360.0
+        curr_yaw = self.car_heading_to_planner_yaw(self.heading)
         #curr_yaw = self.heading_to_yaw(start_yaw) 
         print("curr yaw: ", curr_yaw)
 
@@ -95,25 +95,22 @@ class Hybrid(object):
 
         self.state = (round(curr_x, 3), round(curr_y, 3), round(curr_yaw, 4))
         
-    def update_gem_state_test(self):
-
-        # vehicle gnss heading (yaw) in degrees
-        # vehicle x, y position in fixed local frame, in meters
-        # reference point is located at the center of GNSS antennas
-        slat = 40.0928563
-        slon = -88.2359994
-        heading = 0.0
-        local_x_curr, local_y_curr = self.wps_to_local_xy(slon, slat)
-
-        # heading to yaw (degrees to radians)
-        # heading is calculated from two GNSS antennas
-        curr_yaw = self.heading_to_yaw(heading) 
-
-        # reference point is located at the center of rear axle
-        curr_x = local_x_curr - self.offset * np.cos(curr_yaw)
-        curr_y = local_y_curr - self.offset * np.sin(curr_yaw)
 
         self.state = (round(curr_x, 3), round(curr_y, 3), round(curr_yaw, 4))
+    def car_heading_to_planner_yaw(self, yaw):
+        """
+        input: yaw is degrees
+        yaw is car (0 north, CW)
+        convert to planner (0 east, CCW)
+        output: also degrees
+        """
+        planner_yaw = 0
+        if yaw <= 90:
+            planner_yaw = 90 - yaw
+        else:
+            planner_yaw = 450 - yaw
+        
+        return planner_yaw % 360.0 # none should be negative anyway
 
     def heading_to_yaw(self, heading_curr):
         if (heading_curr >= 270 and heading_curr < 360):
@@ -370,8 +367,8 @@ class Hybrid(object):
                     point.pos[1] = point.pos[1] + center_y - env_size/2
                     point.pos[2] = np.degrees(point.pos[2])  # Convert yaw to degrees
                     # Normalize yaw to [0, 360)
-                    point.pos[2] = point.pos[2] % 360.0
-                    point.pos[2] = (90-point.pos[2]) % 360.0
+                    # point.pos[2] = point.pos[2] % 360.0
+                    point.pos[2] = self.car_heading_to_planner_yaw(point.pos[2])
                 
                 # Downsample path for waypoints (use smaller step for shorter paths)
                 step = max(1, len(path) // self.num_points)  
