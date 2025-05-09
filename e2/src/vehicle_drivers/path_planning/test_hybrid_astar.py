@@ -88,6 +88,21 @@ def smooth_path(path, smoothing=0.3):
         print(f"Warning: Path smoothing failed: {str(e)}")
         print("Returning original path")
         return path
+    
+def car_heading_to_planner_yaw(yaw):
+        """
+        input: yaw is degrees
+        yaw is car (0 north, CW)
+        convert to planner (0 east, CCW)
+        output: RADIANS
+        """
+        planner_yaw = 0.0
+        if yaw <= 90.0:
+            planner_yaw = 90 - yaw
+        else:
+            planner_yaw = 450 - yaw
+        
+        return np.radians(planner_yaw % 360.0) 
 
 def save_path_to_csv(path, filename, olat, olon):
     """Save path waypoints to a CSV file with local coordinates and yaw in degrees"""
@@ -199,17 +214,21 @@ def main():
     # Define start and goal GPS coordinates and yaw angles (in degrees)
     slat =  olat
     slon = olon
-    start_yaw_deg = 0.0  # Start yaw in degrees 0 (facing East)
+    start_yaw_deg = 90 # Start yaw in degrees 0 (facing East)
     
     #glat = 40.0928328
     #glon = -88.2353660
     glat = 40.092788
     glon = -88.235711
-    goal_yaw_deg = 270  # Goal yaw in degrees 180 (facing South)
+    goal_yaw_deg = 180  # Goal yaw in degrees 180 (facing South)
+    
+    
+    
+    
     
     # Convert yaw angles from degrees to radians
-    start_yaw_rad = np.radians(start_yaw_deg)
-    goal_yaw_rad = np.radians(goal_yaw_deg)
+    start_yaw_rad = car_heading_to_planner_yaw(start_yaw_deg)
+    goal_yaw_rad = car_heading_to_planner_yaw(goal_yaw_deg)
     
     # Convert GPS coordinates to local coordinates
     start_x, start_y = wps_to_local_xy(slon, slat, olat, olon)
@@ -250,13 +269,13 @@ def main():
     start_x_shifted = start_x - map.grid_top_left[0]
     start_y_shifted = map.ly - (map.grid_top_left[1] - start_y)  # Flip y-axis
     goal_x_shifted = goal_x - map.grid_top_left[0]
-    goal_y_shifted = map.grid_top_left[1] - goal_y  # Flip y-axis
+    goal_y_shifted = map.ly - (map.grid_top_left[1] - goal_y)  # Flip y-axis
     
     
     
     start_pos = [start_x_shifted, start_y_shifted, start_yaw_rad]  # Initial yaw in radians
     #goal_pos = [goal_x_shifted, goal_y_shifted, goal_yaw_rad]     # Final yaw in radians
-    goal_pos = [park_spot_shifted[0],park_spot_shifted[1],goal_yaw_rad]
+    goal_pos = [goal_x_shifted,goal_y_shifted,goal_yaw_rad]
     car = SimpleCar(env, start_pos, goal_pos)
     
     # Update car parameters to match GEM e2 specs

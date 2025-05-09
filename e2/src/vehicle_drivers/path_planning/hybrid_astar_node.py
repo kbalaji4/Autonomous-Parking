@@ -389,7 +389,7 @@ class Hybrid(object):
 if __name__ == "__main__":
     hybrid = Hybrid()
     try:
-        parking_spots = [(-88.2353660,40.0928328, np.radians(0.0)),
+        parking_spots = [(-88.2353660,40.0928328, np.radians(0.0)), 
                          (-88.235317,40.092751,np.radians(360-(141.43-90)))] # lon, lat, yaw (degrees)
         hybrid.goal = parking_spots[1]
         hybrid.start_hybrid()
