@@ -19,6 +19,12 @@ class Map:
         # self.obs.append([spot[0]+1.3716-2.7432,spot[1]-(5-2.7432),0.1,5])
         # self.obs.append([spot[0]+1.3716-2.7432,spot[1]-(5-2.7432),2.7432,0.1]) 
         
-        self.obs.append([spot[0]+2,spot[1]-3,0.1,6]) 
+        self.obs.append([spot[0]+2,spot[1]-3,0.1,6]) # real spot
         self.obs.append([spot[0]-2,spot[1]-3,0.1,6])
         self.obs.append([spot[0]-2,spot[1]-3,4,0.1]) 
+        self.obs.append([spot[0]+2+4,spot[1]-3,0.1,6])  # dummy spot
+        self.obs.append([spot[0]-2+4,spot[1]-3,0.1,6])
+        self.obs.append([spot[0]-2+4,spot[1]-3,4,0.1]) 
+        self.obs.append([spot[0]+2+8,spot[1]-3,0.1,6]) # dummy spot
+        self.obs.append([spot[0]-2+8,spot[1]-3,0.1,6])
+        self.obs.append([spot[0]-2+8,spot[1]-3,4,0.1]) 
