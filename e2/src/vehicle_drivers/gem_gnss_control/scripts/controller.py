@@ -111,7 +111,7 @@ class PurePursuit(object):
         self.olon       = -88.2359994
 
         # read waypoints into the system 
-        self.goal_reached_threshold = 0.5 # meters
+        self.goal_reached_threshold = 0.3 # meters
         self.goal       = 0        
         self.goal_pub = rospy.Publisher('/current_goal_idx', Int64, queue_size=10) 
         #self.read_waypoints() 
@@ -334,15 +334,16 @@ class PurePursuit(object):
 
             self.dist_arr = np.zeros(len(self.path_points_x))
             
-            # if self.goal < len(self.path_points_x):
-            #     goal_x = self.path_points_x[self.goal]
-            #     goal_y = self.path_points_y[self.goal]
-            #     distance_to_goal = self.dist((curr_x, curr_y), (goal_x, goal_y))
+        
+            if self.goal >= len(self.path_points_x) - 1:
+                goal_x = self.path_points_x[-1]
+                goal_y = self.path_points_y[-1]
+                distance_to_goal = self.dist((curr_x, curr_y), (goal_x, goal_y))
 
-            #     if distance_to_goal < self.goal_reached_threshold:
-            #         rospy.loginfo("Goal waypoint reached. Stopping the car.")
-            #         self.stop_car()
-            #         break  # Exit the loop to stop the controller
+                if distance_to_goal < self.goal_reached_threshold:
+                    rospy.loginfo("Goal waypoint reached. Stopping the car.")
+                    self.stop_car()
+                    break  # Exit the loop to stop the controller
             
             ### May allow vehicle to go backward if the waypoint is behind ###
             # waypoint_vector = [self.path_points_x[self.goal] - curr_x, self.path_points_y[self.goal] - curr_y]
