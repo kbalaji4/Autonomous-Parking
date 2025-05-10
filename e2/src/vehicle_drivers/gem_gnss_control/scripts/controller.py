@@ -112,12 +112,12 @@ class PurePursuit(object):
         self.olon       = -88.2359994
 
         # read waypoints into the system 
-        self.goal_reached_threshold = 0.3 # meters
+        self.goal_reached_threshold = 5 # meters
         self.goal       = 0        
         self.goal_pub = rospy.Publisher('/current_goal_idx', Int64, queue_size=10) 
         #self.read_waypoints() 
 
-        self.desired_speed = 1.5  # m/s, reference speed
+        self.desired_speed = 0.9  # m/s, reference speed
         self.max_accel     = 0.48 # % of acceleration
         self.pid_speed     = PID(0.5, 0.0, 0.1, wg=20)
         self.speed_filter  = OnlineFilter(1.2, 30, 4)
@@ -140,7 +140,7 @@ class PurePursuit(object):
         # GEM vehilce brake control
         self.brake_pub = rospy.Publisher('/pacmod/as_rx/brake_cmd', PacmodCmd, queue_size=1)
         self.brake_cmd = PacmodCmd()
-        self.brake_cmd.enable = False
+        self.brake_cmd.enable = True
         self.brake_cmd.clear  = True
         self.brake_cmd.ignore = True
 
@@ -204,8 +204,9 @@ class PurePursuit(object):
     
     def stop_car(self):
         """Stop the car by applying brakes and disabling acceleration."""
-        self.brake_cmd.f64_cmd = 1.0  # Apply full brake
+        self.brake_cmd.f64_cmd = 0.6  # Apply full brake
         self.accel_cmd.f64_cmd = 0.0  # Disable acceleration
+        
         self.brake_pub.publish(self.brake_cmd)
         self.accel_pub.publish(self.accel_cmd)
         rospy.loginfo("Car stopped.")
@@ -350,15 +351,15 @@ class PurePursuit(object):
             self.dist_arr = np.zeros(len(self.path_points_x))
             
         
-            if self.goal >= len(self.path_points_x) - 1:
+            if self.goal >= 0:#len(self.path_points_x) - 1:
                 goal_x = self.path_points_x[-1]
                 goal_y = self.path_points_y[-1]
                 distance_to_goal = self.dist((curr_x, curr_y), (goal_x, goal_y))
 
                 if distance_to_goal < self.goal_reached_threshold:
                     rospy.loginfo("Goal waypoint reached. Stopping the car.")
-                    self.stop_car()
-                    break  # Exit the loop to stop the controller
+                    #self.stop_car()
+                    #break  # Exit the loop to stop the controller
             
             ### May allow vehicle to go backward if the waypoint is behind ###
             # waypoint_vector = [self.path_points_x[self.goal] - curr_x, self.path_points_y[self.goal] - curr_y]
@@ -409,7 +410,7 @@ class PurePursuit(object):
             alpha = self.heading_to_yaw(self.path_points_heading[self.goal]) - curr_yaw
 
             # ----------------- tuning this part as needed -----------------
-            k       = 0.61 
+            k       = 0.41
             angle_i = math.atan((k * 2 * self.wheelbase * math.sin(alpha)) / L) 
             angle   = angle_i*2
             # ----------------- tuning this part as needed -----------------
@@ -464,7 +465,16 @@ class PurePursuit(object):
 
             self.accel_cmd.f64_cmd = output_accel
             self.steer_cmd.angular_position = np.radians(steering_angle)
-            self.accel_pub.publish(self.accel_cmd)
+            if distance_to_goal < self.goal_reached_threshold and len(self.path_points_heading) > 0:
+                print("Stopping the car as goal is reached")
+                self.brake_cmd.f64_cmd = 0.5  # Apply full brake
+                #self.accel_cmd.f64_cmd = 0.0  # Disable acceleration
+                self.brake_pub.publish(self.brake_cmd)
+                if np.abs(self.heading - self.path_points_heading[-1]) < 1:
+                    break
+                #self.accel_pub.publish(self.accel_cmd)
+            else:
+                self.accel_pub.publish(self.accel_cmd)
             self.steer_pub.publish(self.steer_cmd)
             self.turn_pub.publish(self.turn_cmd)
 

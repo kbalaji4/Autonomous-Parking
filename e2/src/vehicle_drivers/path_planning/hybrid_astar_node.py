@@ -328,7 +328,7 @@ class Hybrid(object):
         car.l = 1.75  # Wheelbase: 69 in = 1.75m
         car.carl = 2.62  # Length: 103 in = 2.62m
         car.carw = 1.41  # Width: 55.5 in = 1.41m
-        car.max_phi = 0.5  # Maximum steering angle
+        car.max_phi = 0.3  # Maximum steering angle
         
         # Adjust grid size based on environment size
         #cell_size = max(0.25, env_size / 200)  # Ensure reasonable number of cells
@@ -340,7 +340,7 @@ class Hybrid(object):
         # Modify weights to prioritize orientation
         hastar.w1 = 0.8   # weight for astar heuristic
         hastar.w2 = 0.2   # weight for simple heuristic
-        hastar.w3 = 0.2   # increased weight for steering angle change
+        hastar.w3 = 0.2  # increased weight for steering angle change
         hastar.w4 = 0.2   # increased weight for turning
         hastar.w5 = 2.0   # weight for reversing
         
@@ -401,7 +401,7 @@ if __name__ == "__main__":
             (-88.235317,40.092751,141.43), # angle parking spot (not supported with walls)
             (-88.235711,40.092788,180)  # Yellow main parking spot facing south  
             ] 
-        hybrid.goal = parking_spots[2]
+        hybrid.goal = parking_spots[1]
         hybrid.start_hybrid()
     except rospy.ROSInterruptException:
         hybrid.cleanup_vehicle_tracking()

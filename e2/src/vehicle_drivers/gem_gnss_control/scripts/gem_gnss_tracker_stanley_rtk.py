@@ -34,11 +34,17 @@ from pid_controllers import PID
 import rospy
 import alvinxy.alvinxy as axy 
 from ackermann_msgs.msg import AckermannDrive
-from std_msgs.msg import String, Bool, Float32, Float64
-from novatel_gps_msgs.msg import NovatelPosition, NovatelXYZ, Inspva
-from sensor_msgs.msg import NavSatFix, Path
-from septentrio_gnss_driver.msg import INSNavGeod
+
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
+
+from std_msgs.msg import String, Bool, Float32, Float64, Int64
+from novatel_gps_msgs.msg import NovatelPosition, NovatelXYZ, Inspva
+from sensor_msgs.msg import NavSatFix
+from septentrio_gnss_driver.msg import INSNavGeod
+
+from geometry_msgs.msg import PoseStamped
+from nav_msgs.msg import Path
+
 
 # GEM PACMod Headers
 from pacmod_msgs.msg import PositionWithSpeed, PacmodCmd, SystemRptFloat, VehicleSpeedRpt
@@ -171,10 +177,10 @@ class Stanley(object):
                 yaw = pose.pose.position.z
                 
                 # Convert to local coordinates
-                local_x, local_y = self.wps_to_local_xy_stanley(x, y)
+                #local_x, local_y = self.wps_to_local_xy_stanley(x, y)
                 
-                self.path_points_x.append(local_x)
-                self.path_points_y.append(local_y)
+                self.path_points_x.append(x)
+                self.path_points_y.append(y)
                 self.path_points_heading.append(yaw)
 
     # Conversion of front wheel to steering wheel
@@ -363,7 +369,7 @@ class Stanley(object):
             
             # Adjust desired speed based on distance to goal
             dist_to_goal = self.dist((curr_x, curr_y), (self.path_points_x[-1], self.path_points_y[-1]))
-            if dist_to_goal < 2.0:  # Start slowing down when within 2 meters
+            if dist_to_goal < 6:  # Start slowing down when within 2 meters
                 adjusted_speed = self.desired_speed * (dist_to_goal / 2.0)
                 adjusted_speed = max(adjusted_speed, self.min_speed_threshold)
             else:
