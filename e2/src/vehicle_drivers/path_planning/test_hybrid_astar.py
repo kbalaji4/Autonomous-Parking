@@ -190,6 +190,12 @@ def plot_path(env, path, closed_, olat, olon):
     plt.title("GEM e2 Path Planning Visualization")
     plt.show()
 
+def planner_to_local_coords(x, y, map):
+    """Convert planner coordinates back to local coordinates"""
+    local_x = x + map.grid_top_left[0]
+    local_y = map.grid_top_left[1] - (map.ly - y)  # Reverse the y-axis flip
+    return local_x, local_y
+
 def main():
     # Set origin GPS coordinates
     olat = 40.0928563
@@ -315,12 +321,12 @@ def main():
         print('No valid path found!')
         return
     
-    # Convert path back to original coordinates and yaw to degrees
+    # Convert path back to local coordinates and yaw to degrees
     for state in path:
-        state.pos[0] = state.pos[0] + map.grid_top_left[0]
-        state.pos[1] = map.grid_top_left[1] - state.pos[1]
-        # state.pos[0] = state.pos[0] + center_x - env_size/2
-        # state.pos[1] = state.pos[1] + center_y - env_size/2
+        # Convert planner coordinates back to local coordinates
+        local_x, local_y = planner_to_local_coords(state.pos[0], state.pos[1], map)
+        state.pos[0] = local_x
+        state.pos[1] = local_y
         state.pos[2] = np.degrees(state.pos[2])  # Convert yaw to degrees
         # Normalize yaw to [0, 360)
         state.pos[2] = state.pos[2] % 360.0
@@ -338,7 +344,7 @@ def main():
    # smoothed_path[0].pos[2] = start_yaw_deg
     #smoothed_path[-1].pos[2] = goal_yaw_deg
     
-    # Save both original and smoothed paths to CSV with local coordinates and yaw in degrees
+    # Save path to CSV with local coordinates and yaw in degrees
     save_path_to_csv(path, 'hybrid_astar_path_original.csv', olat, olon)
     #save_path_to_csv(smoothed_path, 'hybrid_astar_path_smoothed.csv', olat, olon)
     print(f"Paths saved to waypoints/")
@@ -346,10 +352,10 @@ def main():
     # Print some statistics
     print(f"Number of waypoints (original): {len(path)}")
     #print(f"Number of waypoints (smoothed): {len(smoothed_path)}")
-    #print(f"Start position: x={smoothed_path[0].pos[0]:.3f}, y={smoothed_path[0].pos[1]:.3f}, yaw={smoothed_path[0].pos[2]:.3f}°")
-    #print(f"Goal position: x={smoothed_path[-1].pos[0]:.3f}, y={smoothed_path[-1].pos[1]:.3f}, yaw={smoothed_path[-1].pos[2]:.3f}°")
+    print(f"Start position (local): x={path[0].pos[0]:.3f}, y={path[0].pos[1]:.3f}, yaw={path[0].pos[2]:.3f}°")
+    print(f"Goal position (local): x={path[-1].pos[0]:.3f}, y={path[-1].pos[1]:.3f}, yaw={path[-1].pos[2]:.3f}°")
     
-    # Plot both paths
+    # Plot path
     print("Plotting original path...")
     plot_path(env, path, closed_, olat, olon)
     #print("Plotting smoothed path...")
