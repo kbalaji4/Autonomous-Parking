@@ -340,8 +340,8 @@ class Hybrid(object):
         # Modify weights to prioritize orientation
         hastar.w1 = 0.8   # weight for astar heuristic
         hastar.w2 = 0.2   # weight for simple heuristic
-        hastar.w3 = 0.8   # increased weight for steering angle change
-        hastar.w4 = 0.6   # increased weight for turning
+        hastar.w3 = 0.2   # increased weight for steering angle change
+        hastar.w4 = 0.2   # increased weight for turning
         hastar.w5 = 2.0   # weight for reversing
         
         try:

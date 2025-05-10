@@ -120,6 +120,12 @@ def save_path_to_csv(path, filename, olat, olon):
         # Write waypoints
         for state in path:
             writer.writerow([round(state.pos[0], 3), round(state.pos[1], 3), round(state.pos[2], 3)])
+            
+def planner_to_local_coords(x, y, map):
+        """Convert planner coordinates back to local coordinates"""
+        local_x = x + map.grid_top_left[0]
+        local_y = map.grid_top_left[1] - (map.ly - y)  # Reverse the y-axis flip
+        return local_x, local_y
 
 def plot_path(env, path, closed_, olat, olon):
     """Plot the path with animation"""
@@ -214,12 +220,14 @@ def main():
     # Define start and goal GPS coordinates and yaw angles (in degrees)
     slat =  olat
     slon = olon
-    start_yaw_deg = 90 # Start yaw in degrees 0 (facing East)
+    start_yaw_deg = 85 # Start yaw in degrees 0 (facing East)
     
     #glat = 40.0928328
     #glon = -88.2353660
+  
     glat = 40.092788
     glon = -88.235711
+    #glat, glon = olat, olon
     goal_yaw_deg = 180  # Goal yaw in degrees 180 (facing South)
     
     
@@ -274,29 +282,29 @@ def main():
     
     
     start_pos = [start_x_shifted, start_y_shifted, start_yaw_rad]  # Initial yaw in radians
-    #goal_pos = [goal_x_shifted, goal_y_shifted, goal_yaw_rad]     # Final yaw in radians
-    goal_pos = [goal_x_shifted,goal_y_shifted,goal_yaw_rad]
+    goal_pos = [goal_x_shifted, goal_y_shifted, goal_yaw_rad]     # Final yaw in radians
+    #goal_pos = [goal_x_shifted,goal_y_shifted,goal_yaw_rad]
     car = SimpleCar(env, start_pos, goal_pos)
     
     # Update car parameters to match GEM e2 specs
     car.l = 1.75  # Wheelbase: 69 in = 1.75m
     car.carl = 2.62  # Length: 103 in = 2.62m
     car.carw = 1.41  # Width: 55.5 in = 1.41m
-    car.max_phi = 0.5  # Maximum steering angle
+    car.max_phi = 0.3  # Maximum steering angle
     
     # Adjust grid size based on environment size
     #cell_size = max(0.25, map.lx / 200)  # Ensure reasonable number of cells
     grid = Grid(env, cell_size=map.cell_size)
     
     # Initialize hybrid A* planner with modified parameters for smoother paths
-    hastar = HybridAstar(car, grid, reverse=False)
+    hastar = HybridAstar(car, grid, reverse=True)
     
-    #Modify weights to prioritize orientation
-    hastar.w1 = 0.8   # weight for astar heuristic
-    hastar.w2 = 0.2   # weight for simple heuristic
-    hastar.w3 = 0.8   # increased weight for steering angle change
-    hastar.w4 = 0.6   # increased weight for turning
-    hastar.w5 = 2   # weight for reversing
+    # #Modify weights to prioritize orientation
+    # hastar.w1 = 0.8   # weight for astar heuristic
+    # hastar.w2 = 0.2   # weight for simple heuristic
+    # hastar.w3 = 0.2   # increased weight for steering angle change
+    # hastar.w4 = 0.2   # increased weight for turning
+    # hastar.w5 = 2   # weight for reversing
     
     # Plan path
     print("Planning path...")
@@ -316,15 +324,17 @@ def main():
         return
     
     # Convert path back to original coordinates and yaw to degrees
-    for state in path:
-        state.pos[0] = state.pos[0] + map.grid_top_left[0]
-        state.pos[1] = map.grid_top_left[1] - state.pos[1]
-        # state.pos[0] = state.pos[0] + center_x - env_size/2
-        # state.pos[1] = state.pos[1] + center_y - env_size/2
-        state.pos[2] = np.degrees(state.pos[2])  # Convert yaw to degrees
-        # Normalize yaw to [0, 360)
-        state.pos[2] = state.pos[2] % 360.0
-        state.pos[2] = (90-state.pos[2]) % 360.0
+    if path:
+        for state in path:
+            local_x, local_y = planner_to_local_coords(state.pos[0], state.pos[1], map)
+            state.pos[0] = local_x
+            state.pos[1] = local_y
+            # state.pos[0] = state.pos[0] + center_x - env_size/2
+            # state.pos[1] = state.pos[1] + center_y - env_size/2
+            state.pos[2] = np.degrees(state.pos[2])  # Convert yaw to degrees
+            # Normalize yaw to [0, 360)
+            state.pos[2] = state.pos[2] % 360.0
+            state.pos[2] = (90-state.pos[2]) % 360.0
     
     # Downsample path for waypoints (use smaller step for shorter paths)
     step = max(1, len(path) // 50)  # Ensure we get at least 30 points
