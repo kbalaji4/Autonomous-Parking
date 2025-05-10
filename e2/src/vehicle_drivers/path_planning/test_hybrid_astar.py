@@ -280,6 +280,7 @@ def main():
     
     
     start_pos = [start_x_shifted, start_y_shifted, start_yaw_rad]  # Initial yaw in radians
+    start_pos = [20,10,start_yaw_rad]
     #goal_pos = [goal_x_shifted, goal_y_shifted, goal_yaw_rad]     # Final yaw in radians
     goal_pos = [goal_x_shifted,goal_y_shifted,goal_yaw_rad]
     car = SimpleCar(env, start_pos, goal_pos)
@@ -298,11 +299,11 @@ def main():
     hastar = HybridAstar(car, grid, reverse=False)
     
     #Modify weights to prioritize orientation
-    hastar.w1 = 0.8   # weight for astar heuristic
-    hastar.w2 = 0.2   # weight for simple heuristic
-    hastar.w3 = 0.8   # increased weight for steering angle change
-    hastar.w4 = 0.6   # increased weight for turning
-    hastar.w5 = 2   # weight for reversing
+    hastar.w1 = 0.8   # Reduced w1 (astar heuristic) to allow more exploration
+    hastar.w2 = 0.2   # Increased w2 (simple heuristic) to favor direct paths
+    hastar.w3 = 0.8   # Reduced w3 (steering angle change) to allow sharper turns
+    hastar.w4 = 0.6   # Increased w4 (turning weight) to prioritize orientation
+    hastar.w5 = 2   # Reduced w5 (reversing weight) to allow more aggressive maneuvers
     
     # Plan path
     print("Planning path...")
