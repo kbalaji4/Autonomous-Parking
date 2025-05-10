@@ -60,7 +60,7 @@ class PurePursuit(object):
         
         # Create figure and subplots
         self.fig, (self.ax1, self.ax2) = plt.subplots(2, 1, figsize=(10, 8))
-        self.fig.suptitle('Controller Performance Metrics')
+        self.fig.suptitle('Pure Pursuit Controller Performance Metrics')
         
         # Initialize lines for plotting
         self.line1, = self.ax1.plot([], [], 'b-', label='Cross-track Error')
@@ -78,8 +78,9 @@ class PurePursuit(object):
         self.ax2.grid(True)
         self.ax2.legend()
         
-        # Initialize animation
-        self.ani = FuncAnimation(self.fig, self.update_plot, interval=100)
+        # Initialize animation with blit=True for better performance
+        self.ani = FuncAnimation(self.fig, self.update_plot, interval=100, blit=True)
+        plt.ion()  # Enable interactive mode
         plt.show(block=False)
 
         self.rate       = rospy.Rate(10)
@@ -271,19 +272,33 @@ class PurePursuit(object):
 
     def update_plot(self, frame):
         """Update the plot with new data"""
+        if not self.plot_data['time']:  # If no data yet
+            return self.line1, self.line2
+            
         self.line1.set_data(self.plot_data['time'], self.plot_data['ct_error'])
         self.line2.set_data(self.plot_data['time'], self.plot_data['steering_angle'])
         
-        # Update y-axis limits
+        # Update y-axis limits with some padding
         if len(self.plot_data['ct_error']) > 0:
-            self.ax1.set_ylim(min(self.plot_data['ct_error'])-0.1, max(self.plot_data['ct_error'])+0.1)
+            min_ct = min(self.plot_data['ct_error'])
+            max_ct = max(self.plot_data['ct_error'])
+            padding = (max_ct - min_ct) * 0.1 if max_ct != min_ct else 0.1
+            self.ax1.set_ylim(min_ct - padding, max_ct + padding)
+            
         if len(self.plot_data['steering_angle']) > 0:
-            self.ax2.set_ylim(min(self.plot_data['steering_angle'])-5, max(self.plot_data['steering_angle'])+5)
+            min_steer = min(self.plot_data['steering_angle'])
+            max_steer = max(self.plot_data['steering_angle'])
+            padding = (max_steer - min_steer) * 0.1 if max_steer != min_steer else 5
+            self.ax2.set_ylim(min_steer - padding, max_steer + padding)
         
         # Update x-axis limits
         if len(self.plot_data['time']) > 0:
-            self.ax1.set_xlim(min(self.plot_data['time']), max(self.plot_data['time']))
-            self.ax2.set_xlim(min(self.plot_data['time']), max(self.plot_data['time']))
+            self.ax1.set_xlim(self.plot_data['time'][0], self.plot_data['time'][-1])
+            self.ax2.set_xlim(self.plot_data['time'][0], self.plot_data['time'][-1])
+        
+        # Force redraw
+        self.fig.canvas.draw_idle()
+        self.fig.canvas.flush_events()
         
         return self.line1, self.line2
 
@@ -458,6 +473,7 @@ class PurePursuit(object):
     def __del__(self):
         """Cleanup when the object is destroyed"""
         plt.close('all')
+        plt.ioff()  # Turn off interactive mode
 
 
 def pure_pursuit():
