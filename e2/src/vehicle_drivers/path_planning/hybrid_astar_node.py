@@ -135,6 +135,12 @@ class Hybrid(object):
         lat, lon = xy2ll(x, y, self.olat, self.olon)
         return lon, lat
     
+    def planner_to_local_coords(self, x, y, map):
+        """Convert planner coordinates back to local coordinates"""
+        local_x = x + map.grid_top_left[0]
+        local_y = map.grid_top_left[1] - (map.ly - y)  # Reverse the y-axis flip
+        return local_x, local_y
+    
     def publish_path(self, path_points):
         pub = rospy.Publisher('/waypoints', Path, queue_size=1, latch=True)
         rospy.sleep(1.0)
@@ -355,8 +361,9 @@ class Hybrid(object):
             # print('Total time: {}s'.format(round(time()-t, 3)))
             if path:
                 for state in path:
-                    state.pos[0] = state.pos[0] + map.grid_top_left[0]
-                    state.pos[1] = map.grid_top_left[1] - state.pos[1]
+                    local_x, local_y = self.planner_to_local_coords(state.pos[0], state.pos[1], map)
+                    state.pos[0] = local_x
+                    state.pos[1] = local_y
                     # state.pos[0] = state.pos[0] + center_x - env_size/2
                     # state.pos[1] = state.pos[1] + center_y - env_size/2
                     state.pos[2] = np.degrees(state.pos[2])  # Convert yaw to degrees

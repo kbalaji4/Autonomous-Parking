@@ -7,8 +7,11 @@ from geometry_msgs.msg import Point
 import numpy as np
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler
+import tf2_ros
+import tf2_sensor_msgs.tf2_sensor_msgs as tf2_sensor_msgs
 import os
 import sys
+
 
 scripts_dir = os.path.dirname(__file__)
 if scripts_dir not in sys.path:
@@ -16,6 +19,27 @@ if scripts_dir not in sys.path:
 
 print("printing paths in main(): ")
 print(sys.path)
+
+def cloud_cb(msg: PointCloud2):
+    try:
+        # 1. lookup transform from your world frame (e.g. "map")  
+        #    from the sensor frame (msg.header.frame_id, e.g. "os_sensor")
+        rospy.loginfo(f"source frame: msg.header.frame_id: {msg.header.frame_id}") # this is os.sensor fs
+        trans = tf_buffer.lookup_transform(
+            world_frame,                # target frame
+            msg.header.frame_id,        # source frame
+            msg.header.stamp,           # at the time the cloud was captured
+            rospy.Duration(0.5)         # wait up to 0.5s for the transform
+        )
+        # 2. transform the entire PointCloud2 into world_frame
+        cloud_world = tf2_sensor_msgs.do_transform_cloud(msg, trans)
+        # 3. re-publish
+        pub_world.publish(cloud_world)
+
+    except (tf2_ros.LookupException,
+            tf2_ros.ExtrapolationException,
+            tf2_ros.ConnectivityException) as e:
+        rospy.logwarn(f"TF lookup failed: {e}")
 
 def filter_points(points_array, max_range=15.0, min_height=-1.7, max_height=-0.5):
     """Filter points based on range and height"""
@@ -59,13 +83,13 @@ def pointcloud_callback(msg):
         if not points:
             return
         points = np.array(points)
-        rospy.loginfo(f"Original points: {points.shape}")
+        # rospy.loginfo(f"Original points: {points.shape}")
 
         filtered_points = filter_points(points)
-        rospy.loginfo(f"Filtered points: {filtered_points.shape}")
+        # rospy.loginfo(f"Filtered points: {filtered_points.shape}")
 
         downsampled_points = downsample_points(filtered_points)
-        rospy.loginfo(f"Downsampled points: {downsampled_points.shape}")
+        # rospy.loginfo(f"Downsampled points: {downsampled_points.shape}")
 
         if len(downsampled_points) == 0:
             rospy.loginfo("no points after downsampling")
@@ -83,7 +107,7 @@ def pointcloud_callback(msg):
         
         marker_array = MarkerArray()
         marker_id = 0
-        rospy.loginfo(f"Unique labels: {len(unique_labels)}")
+        # rospy.loginfo(f"Unique labels: {len(unique_labels)}")
         for k in unique_labels:
             if k == -1:
                 # noise
@@ -148,10 +172,110 @@ def clear_markers():
 
 if __name__ == '__main__':
     rospy.init_node('lidar_obstacle_detector')
-    lidar_sub = rospy.Subscriber('/ouster/points', PointCloud2, pointcloud_callback, queue_size=1)
-    marker_pub = rospy.Publisher('/lidar_obstacles', MarkerArray, queue_size=1)
+    lidar_sub = rospy.Subscriber('/ouster/points', PointCloud2, cloud_cb, queue_size=1)
 
-    clear_markers() # could also just toggle the checkbox in rviz 
+
+    marker_pub = rospy.Publisher('/lidar_obstacles', MarkerArray, queue_size=1)
+    pub_world = rospy.Publisher("/ouster/points_world", PointCloud2, queue_size=1) # for visualizing 
+
+    # which frame your GNSS/INS is publishing as the “map” (or world) frame:
+    world_frame = rospy.get_param("~world_frame", "base_link")
+    print(f"world frame: {world_frame}")
+
+    # setup TF2
+    tf_buffer   = tf2_ros.Buffer()
+    tf_listener = tf2_ros.TransformListener(tf_buffer)
+
+    # clear_markers() # could also just toggle the checkbox in rviz 
 
     rospy.loginfo("Lidar obstacle detector node started")
     rospy.spin()
+
+#!/usr/bin/env python3
+import rospy
+import numpy as np
+import open3d as o3d
+import sensor_msgs.point_cloud2 as pc2
+from sensor_msgs.msg import PointCloud2
+from geometry_msgs.msg import PoseStamped
+import tf
+import tf2_ros
+import tf2_sensor_msgs.tf2_sensor_msgs as tf2_sensor_msgs
+
+class ConeMapper:
+    def __init__(self):
+        rospy.init_node('cone_mapper')
+        # world frame for output poses
+        self.world_frame = rospy.get_param('~world_frame','base_link')
+
+        # Subscribers & Publishers
+        self.sub = rospy.Subscriber('/ouster/points', PointCloud2, self.cb, queue_size=1)
+        self.pub_markers = rospy.Publisher('/cone_world_positions', PoseStamped, queue_size=10)
+
+        # TF2 listener to transform cloud into world_frame
+        self.tfbuf = tf2_ros.Buffer()
+        tf2_ros.TransformListener(self.tfbuf)
+
+        # TF listener for manual cloud→world (fallback)
+        self.tf = tf.TransformListener()
+
+    def cb(self, msg: PointCloud2):
+        # 1) Transform cloud into world_frame
+        try:
+            trans = self.tfbuf.lookup_transform(
+                self.world_frame,
+                msg.header.frame_id,
+                msg.header.stamp,
+                rospy.Duration(0.5)
+            )
+            cloud_msg = tf2_sensor_msgs.do_transform_cloud(msg, trans)
+        except Exception as e:
+            rospy.logwarn(f"TF failure: {e}")
+            return
+
+        # 2) Convert to numpy Nx3
+        pts = np.array([[p[0],p[1],p[2]] for p in pc2.read_points(cloud_msg, skip_nans=True)])
+        if pts.shape[0] < 50:
+            return
+
+        # 3) Make Open3D pointcloud
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pts)
+
+        # 4) Voxel downsample
+        pcd = pcd.voxel_down_sample(voxel_size=0.1)
+
+        # 5) Remove ground plane via RANSAC
+        plane_model, inliers = pcd.segment_plane(
+            distance_threshold=0.02,
+            ransac_n=3,
+            num_iterations=1000
+        )
+        pcd_without_ground = pcd.select_by_index(inliers, invert=True)
+
+        # 6) Height & range crop in camera frame: if needed,
+        #    you could re-filter by z or xy here
+
+        # 7) DBSCAN clustering
+        labels = np.array(pcd_without_ground.cluster_dbscan(eps=0.3, min_points=10, print_progress=False))
+        unique_labels = set(labels) - {-1}
+
+        # 8) Publish centroids
+        for lid in unique_labels:
+            idx = np.where(labels==lid)[0]
+            cluster = np.asarray(pcd_without_ground.points)[idx]
+            if len(cluster)<5: 
+                continue
+            centroid = cluster.mean(axis=0)
+            ps = PoseStamped()
+            ps.header.stamp = msg.header.stamp
+            ps.header.frame_id = self.world_frame
+            ps.pose.position.x, ps.pose.position.y, ps.pose.position.z = centroid
+            ps.pose.orientation.w = 1.0
+            self.pub_markers.publish(ps)
+
+    def run(self):
+        rospy.spin()
+
+if __name__=='__main__':
+    ConeMapper().run()

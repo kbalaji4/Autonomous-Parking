@@ -44,13 +44,20 @@ class YOLOv5Node:
         #     print("ZED enable positional tracking failed"); self.zed.close(); exit()
         
         # Subscribers and Publishers
+        self.fl_image_sub = rospy.Subscriber("/camera_fl/arena_camera_node/image_raw", Image, self.fl_image_callback, queue_size=10)
+        self.fr_image_sub = rospy.Subscriber("/camera_fr/arena_camera_node/image_raw", Image, self.fr_image_callback, queue_size=10)
         self.image_sub = rospy.Subscriber("/zed2/zed_node/left/image_rect_color",Image, self.image_callback, queue_size=10)
         self.depth_sub = rospy.Subscriber("/zed2/zed_node/depth/depth_registered", Image, self.depth_callback, queue_size=10)
         self.camera_info_sub = rospy.Subscriber("/zed2/zed_node/left/camera_info", CameraInfo, self.camera_info_callback, queue_size=10)
         self.camera_pose_sub = rospy.Subscriber("/zed2/zed_node/pose", PoseStamped, self.camera_pose_callback)
 
         self.annotated_pub = rospy.Publisher("/annotated_image", Image, queue_size=10)
+        self.fr_annotated_pub = rospy.Publisher("/fr_annotated_image", Image, queue_size=10)
+        self.fl_annotated_pub = rospy.Publisher("/fl_annotated_image", Image, queue_size=10)
         self.detections_pub = rospy.Publisher("/detections", String, queue_size=1)
+        self.fr_detections_pub = rospy.Publisher("/fr_detections", String, queue_size=1)
+        self.fl_detections_pub = rospy.Publisher("/fl_detections", String, queue_size=1)
+
         self.world_coordinates_pub = rospy.Publisher("/cone_world_positions", PoseStamped, queue_size=10)
 
 
@@ -204,6 +211,83 @@ class YOLOv5Node:
         except Exception as e:
             rospy.logerr(f"Error processing depth image: {e}")
     
+    def fl_image_callback(self, msg):
+        """"
+        no depth on this one
+        """
+        try:
+            # print(f"fl callback: {msg.header.frame_id}")
+            # Convert image to OpenCV format
+            frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+            frame = cv2.resize(frame, (640, 640))
+            
+            # Run inference
+            results = self.model(frame)
+            detections = results.pandas().xyxy[0].to_dict(orient='records')
+            
+            if detections:
+                # rospy.loginfo(f'Detections: {detections}')
+                detection_msg = String()
+                detection_msg.data = str(detections)
+                # detection_msg.header = msg.header # copy header from image
+                self.fl_detections_pub.publish(detection_msg)
+                
+                # Draw bounding boxes on frame
+                for det in detections:
+                    xmin = int(det['xmin'])
+                    ymin = int(det['ymin'])
+                    xmax = int(det['xmax'])
+                    ymax = int(det['ymax'])
+
+                    label = f"{det['name']} {det['confidence']:.2f}"
+                    cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (0, 255, 0), 2)
+                    cv2.putText(frame, label, (xmin, ymin - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            
+            # Convert annotated frame back to ROS image and publish
+            annotated_img_msg = self.bridge.cv2_to_imgmsg(frame, encoding="bgr8")
+            self.fl_annotated_pub.publish(annotated_img_msg)
+        except Exception as e:
+            rospy.logerr(f"Error during detection: {e}")
+    def fr_image_callback(self, msg):
+        """"
+        no depth on this one
+        """
+        try:
+            # Convert image to OpenCV format
+            frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+            frame = cv2.resize(frame, (640, 640))
+            
+            # Run inference
+            results = self.model(frame)
+            detections = results.pandas().xyxy[0].to_dict(orient='records')
+            
+            if detections:
+                # rospy.loginfo(f'Detections: {detections}')
+                detection_msg = String()
+                detection_msg.data = str(detections)
+                # detection_msg.header = msg.header # copy header from image
+                self.fr_detections_pub.publish(detection_msg)
+                
+                # Draw bounding boxes on frame
+                for det in detections:
+                    xmin = int(det['xmin'])
+                    ymin = int(det['ymin'])
+                    xmax = int(det['xmax'])
+                    ymax = int(det['ymax'])
+
+                    label = f"{det['name']} {det['confidence']:.2f}"
+                    cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (0, 255, 0), 2)
+                    cv2.putText(frame, label, (xmin, ymin - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            
+            # Convert annotated frame back to ROS image and publish
+            annotated_img_msg = self.bridge.cv2_to_imgmsg(frame, encoding="bgr8")
+            self.fr_annotated_pub.publish(annotated_img_msg)
+            
+        except Exception as e:
+            rospy.logerr(f"Error during detection: {e}")
+        
     def image_callback(self, msg):
         try:
             # Convert image to OpenCV format
@@ -241,6 +325,8 @@ class YOLOv5Node:
                         position_3d = None
                         if valid_depths.size > 0:
                             centroid_depth = np.median(valid_depths)  # Use median for robustness
+
+                            # x, y is just center of bounding box
                             cone_x = (xmin + xmax) // 2
                             cone_y = (ymin + ymax) // 2
                             cone_positions.append((cone_x, cone_y, centroid_depth))
