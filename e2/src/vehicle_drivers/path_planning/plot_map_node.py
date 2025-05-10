@@ -130,10 +130,16 @@ class MapPlotter:
     def path_callback(self, msg):
         """Callback for path updates"""
         with self.path_lock:
+            # Clear current path data
             self.path_points_x = []
             self.path_points_y = []
             self.path_points_heading = []
             
+            # Clear the path line from the plot
+            if hasattr(self, 'path_line'):
+                self.path_line.set_data([], [])
+            
+            # Add new path points
             for pose in msg.poses:
                 # Get original coordinates
                 x = pose.pose.position.x
@@ -147,6 +153,9 @@ class MapPlotter:
                 self.path_points_x.append(x_shifted)
                 self.path_points_y.append(y_shifted)
                 self.path_points_heading.append(yaw)
+            
+            # Force a redraw of the plot
+            self.fig.canvas.draw_idle()
     
     def wps_to_local_xy(self, lon_wp, lat_wp):
         """Convert GNSS coordinates to local coordinates"""

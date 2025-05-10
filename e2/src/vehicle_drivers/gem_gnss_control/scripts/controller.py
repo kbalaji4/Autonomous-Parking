@@ -21,6 +21,9 @@ import math
 import numpy as np
 from numpy import linalg as la
 import scipy.signal as signal
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+import time
 
 from filters import OnlineFilter
 from pid_controllers import PID
@@ -47,6 +50,37 @@ from tf.transformations import euler_from_quaternion
 class PurePursuit(object):
     
     def __init__(self):
+        # Add plotting variables
+        self.plot_data = {
+            'time': [],
+            'ct_error': [],
+            'steering_angle': []
+        }
+        self.start_time = time.time()
+        
+        # Create figure and subplots
+        self.fig, (self.ax1, self.ax2) = plt.subplots(2, 1, figsize=(10, 8))
+        self.fig.suptitle('Controller Performance Metrics')
+        
+        # Initialize lines for plotting
+        self.line1, = self.ax1.plot([], [], 'b-', label='Cross-track Error')
+        self.line2, = self.ax2.plot([], [], 'r-', label='Steering Angle')
+        
+        # Setup subplots
+        self.ax1.set_ylabel('Cross-track Error (m)')
+        self.ax1.set_title('Cross-track Error vs Time')
+        self.ax1.grid(True)
+        self.ax1.legend()
+        
+        self.ax2.set_xlabel('Time (s)')
+        self.ax2.set_ylabel('Steering Angle (deg)')
+        self.ax2.set_title('Steering Angle vs Time')
+        self.ax2.grid(True)
+        self.ax2.legend()
+        
+        # Initialize animation
+        self.ani = FuncAnimation(self.fig, self.update_plot, interval=100)
+        plt.show(block=False)
 
         self.rate       = rospy.Rate(10)
 
@@ -235,6 +269,24 @@ class PurePursuit(object):
     def dist(self, p1, p2):
         return round(np.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2), 3)
 
+    def update_plot(self, frame):
+        """Update the plot with new data"""
+        self.line1.set_data(self.plot_data['time'], self.plot_data['ct_error'])
+        self.line2.set_data(self.plot_data['time'], self.plot_data['steering_angle'])
+        
+        # Update y-axis limits
+        if len(self.plot_data['ct_error']) > 0:
+            self.ax1.set_ylim(min(self.plot_data['ct_error'])-0.1, max(self.plot_data['ct_error'])+0.1)
+        if len(self.plot_data['steering_angle']) > 0:
+            self.ax2.set_ylim(min(self.plot_data['steering_angle'])-5, max(self.plot_data['steering_angle'])+5)
+        
+        # Update x-axis limits
+        if len(self.plot_data['time']) > 0:
+            self.ax1.set_xlim(min(self.plot_data['time']), max(self.plot_data['time']))
+            self.ax2.set_xlim(min(self.plot_data['time']), max(self.plot_data['time']))
+        
+        return self.line1, self.line2
+
     def start_pp(self):
         
         while not rospy.is_shutdown():
@@ -353,14 +405,29 @@ class PurePursuit(object):
             # steering_angle in degrees
             steering_angle = self.front2steer(f_delta_deg)
 
-            # if(self.gem_enable == True):
-            #     print("Current index: " + str(self.goal))
-            #     print("Forward velocity: " + str(self.speed))
-            #     ct_error = round(np.sin(alpha) * L, 3)
-            #     print("Crosstrack Error: " + str(ct_error))
-            #     print("Front steering angle: " + str(np.degrees(f_delta)) + " degrees")
-            #     print("Steering wheel angle: " + str(steering_angle) + " degrees" )
-            #     print("\n")
+            # Calculate cross-track error
+            ct_error = round(np.sin(alpha) * L, 3)
+            
+            # Update plot data
+            current_time = time.time() - self.start_time
+            self.plot_data['time'].append(current_time)
+            self.plot_data['ct_error'].append(ct_error)
+            self.plot_data['steering_angle'].append(f_delta_deg)
+            
+            # Keep only last 100 points for better performance
+            if len(self.plot_data['time']) > 100:
+                self.plot_data['time'] = self.plot_data['time'][-100:]
+                self.plot_data['ct_error'] = self.plot_data['ct_error'][-100:]
+                self.plot_data['steering_angle'] = self.plot_data['steering_angle'][-100:]
+
+            # Print debug info
+            if(self.gem_enable == True):
+                print("Current index: " + str(self.goal))
+                print("Forward velocity: " + str(self.speed))
+                print("Crosstrack Error: " + str(ct_error))
+                print("Front steering angle: " + str(f_delta_deg) + " degrees")
+                print("Steering wheel angle: " + str(steering_angle) + " degrees")
+                print("\n")
 
             current_time = rospy.get_time()
             filt_vel     = self.speed_filter.get_data(self.speed)
@@ -386,6 +453,10 @@ class PurePursuit(object):
             self.turn_pub.publish(self.turn_cmd)
 
             self.rate.sleep()
+
+    def __del__(self):
+        """Cleanup when the object is destroyed"""
+        plt.close('all')
 
 
 def pure_pursuit():
