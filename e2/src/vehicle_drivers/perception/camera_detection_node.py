@@ -13,10 +13,8 @@ from geometry_msgs.msg import PoseStamped, Point
 from nav_msgs.msg import OccupancyGrid
 import tf2_ros
 import tf2_geometry_msgs
-from tf.transformations import euler_from_quaternion, quaternion_matrix
+from tf.transformations import euler_from_quaternion
 import message_filters
-import pyzed.sl as sl
-
 
 scripts_dir = os.path.dirname(__file__)
 if scripts_dir not in sys.path:
@@ -28,20 +26,6 @@ print(sys.path)
 class YOLOv5Node:
     def __init__(self):
         rospy.init_node('yolov5_detector', anonymous=True)
-
-        self.zed = sl.Camera()
-        init_params = sl.InitParameters()
-        init_params.camera_resolution = sl.RESOLUTION.HD720
-        init_params.depth_mode        = sl.DEPTH_MODE.ULTRA
-        init_params.coordinate_units  = sl.UNIT.METER
-        if self.zed.open(init_params) != sl.ERROR_CODE.SUCCESS:
-            print("ZED Open Failed"); self.zed.close(); exit()
-
-        # 2) Turn on ZED’s built-in “world‐frame” SLAM tracker
-        tracking_params = sl.PositionalTrackingParameters()  
-        # (you can set tracking_params.set_as_static=True if ZED is on a fixed tripod)
-        if self.zed.enable_positional_tracking(tracking_params) != sl.ERROR_CODE.SUCCESS:
-            print("ZED enable positional tracking failed"); self.zed.close(); exit()
         
         # Subscribers and Publishers
         self.image_sub = rospy.Subscriber("/zed2/zed_node/left/image_rect_color",Image, self.image_callback, queue_size=10)
@@ -77,54 +61,19 @@ class YOLOv5Node:
         
         rospy.loginfo("YOLOv5 Detector Node Initialized.")
 
-    def __del__(self):
-        if hasattr(self, 'zed'):
-            self.zed.close()
-
     def camera_pose_callback(self, msg):
         """Store camera position and orientation"""
         self.camera_position = msg.pose.position
         self.camera_orientation = msg.pose.orientation
 
     def camera_info_callback(self, msg):
-        """
-        camera_matrix structure:
-        [[fx  0  cx]
-        [0   fy cy]
-        [0   0   1]]
-        """
         if self.camera_matrix is None:
             self.camera_matrix = np.array(msg.K).reshape(3, 3)
             self.dist_coeffs = np.array(msg.D)
         
-    def get_3d_position_zed(self, pixel_x, pixel_y):
-        """Get 3D position using ZED SDK. so pixel --> camera"""
-        point_cloud = sl.Mat()
-        err = self.zed.retrieve_measure(point_cloud, sl.MEASURE.XYZRGBA)
-        if err != sl.ERROR_CODE.SUCCESS:
-            return None
-            
-        point3D = sl.float3()
-        err = point_cloud.get_value(pixel_x, pixel_y, point3D)
-        if err != sl.ERROR_CODE.SUCCESS:
-            return None
-            
-        # ZED SDK gives coordinates in camera frame
-        return [point3D.x, point3D.y, point3D.z]
-
-    def get_world_transform_zed(self):
-        """Get current camera pose from ZED SDK. so camera --> world"""
-        zed_pose = sl.Pose()
-        if self.zed.get_position(zed_pose, sl.REFERENCE_FRAME.WORLD) == sl.ERROR_CODE.SUCCESS:
-            return zed_pose.get_translation(), zed_pose.get_rotation_matrix()
-        return None
-
     def get_3d_position(self, pixel_x, pixel_y, depth):
-        """
-        pixel to camera
-        """
-        # if self.camera_matrix is None:
-        #     return None
+        if self.camera_matrix is None:
+            return None
             
         # Convert pixel coordinates to 3D coordinates
         cx = self.camera_matrix[0,2]
@@ -156,7 +105,7 @@ class YOLOv5Node:
             self.camera_orientation.z,
             self.camera_orientation.w
         ]
-        roll, pitch, yaw = euler_from_quaternion(quaternion) # or hard coded one?
+        roll, pitch, yaw = euler_from_quaternion(quaternion)
         
         # Create rotation matrix
         Rx = np.array([
@@ -177,14 +126,8 @@ class YOLOv5Node:
             [0, 0, 1]
         ])
         
-        # # Combined rotation matrix
-        # R = Rz @ Ry @ Rx
-
-        # could also try this
-        R = quaternion_matrix(quaternion)[:3, :3]
-
-        # Camera to world rotation is INVERSE of camera's orientation?
-        R_cam_to_world = R.T
+        # Combined rotation matrix
+        R = Rz @ Ry @ Rx
         
         # Convert point from camera to world frame
         point_camera_np = np.array(point_camera)
@@ -253,29 +196,17 @@ class YOLOv5Node:
                             rospy.loginfo(f"Cone detected with depth {centroid_depth:.2f}m")
                             position_3d = self.get_3d_position(cone_x, cone_y, centroid_depth)
                         if position_3d:
-                            """zed2 built in slam"""
-                            # Get world transform
-                            translation, rotation = self.get_world_transform_zed()
-                            if translation and rotation:
-                                # Transform to world coordinates
-                                position_3d = np.array(position_3d)
-                                world_pos = rotation @ position_3d + translation
-                                
-                                # Publish world position
-                                self.publish_world_position(world_pos.tolist(), msg.header.stamp)
-                                
-                                wx, wy, wz = world_pos
-                                rospy.loginfo(f"Cone world position: X={wx:.2f}m, Y={wy:.2f}m, Z={wz:.2f}m")
-                            
-                            """zed2 diy depth"""
                             X, Y, Z = position_3d
                             rospy.loginfo(f"Cone detected at X={X:.2f}m, Y={Y:.2f}m, Z={Z:.2f}m")
                             world_pos = self.camera_to_world([X, Y, Z])
-                            print("world_pos: ", world_pos)
                             if world_pos:
                                 wx, wy, wz = world_pos
                                 rospy.loginfo(f"Cone world position: X={wx:.2f}m, Y={wy:.2f}m, Z={wz:.2f}m")
                                 self.publish_world_position(world_pos, msg.header.stamp)
+                                
+                            # Calculate angle from camera center
+                            # angle = np.arctan2(X, Z)
+                            # rospy.loginfo(f"Cone angle from center: {np.degrees(angle):.2f} degrees")
 
                     label = f"{det['name']} {det['confidence']:.2f} {centroid_depth:.2f} {wx:.2f} {wy:.2f} {wz:.2f}"
                     cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (0, 255, 0), 2)

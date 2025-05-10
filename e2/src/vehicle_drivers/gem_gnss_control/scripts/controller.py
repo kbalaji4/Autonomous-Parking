@@ -320,7 +320,8 @@ class PurePursuit(object):
 
             # finding those points which are less than the look ahead distance (will be behind and ahead of the vehicle)
             goal_arr = np.where( (self.dist_arr < self.look_ahead + 0.3) & (self.dist_arr > self.look_ahead - 0.3) )[0]
-
+            print(goal_arr)
+            print(self.dist_arr)
             # finding the goal point which is the last in the set of points less than the lookahead distance
             for idx in goal_arr:
                 v1 = [self.path_points_x[idx]-curr_x , self.path_points_y[idx]-curr_y]
@@ -330,6 +331,7 @@ class PurePursuit(object):
                 if abs(temp_angle) < np.pi/2:
                     self.goal = idx
                     break
+            print(self.goal)
             self.goal_pub.publish(Int64(self.goal))
             # finding the distance between the goal point and the vehicle
             # true look-ahead distance between a waypoint and current position
@@ -339,7 +341,7 @@ class PurePursuit(object):
             alpha = self.heading_to_yaw(self.path_points_heading[self.goal]) - curr_yaw
 
             # ----------------- tuning this part as needed -----------------
-            k       = 0.41 
+            k       = 0.61 
             angle_i = math.atan((k * 2 * self.wheelbase * math.sin(alpha)) / L) 
             angle   = angle_i*2
             # ----------------- tuning this part as needed -----------------
@@ -351,14 +353,14 @@ class PurePursuit(object):
             # steering_angle in degrees
             steering_angle = self.front2steer(f_delta_deg)
 
-            if(self.gem_enable == True):
-                print("Current index: " + str(self.goal))
-                print("Forward velocity: " + str(self.speed))
-                ct_error = round(np.sin(alpha) * L, 3)
-                print("Crosstrack Error: " + str(ct_error))
-                print("Front steering angle: " + str(np.degrees(f_delta)) + " degrees")
-                print("Steering wheel angle: " + str(steering_angle) + " degrees" )
-                print("\n")
+            # if(self.gem_enable == True):
+            #     print("Current index: " + str(self.goal))
+            #     print("Forward velocity: " + str(self.speed))
+            #     ct_error = round(np.sin(alpha) * L, 3)
+            #     print("Crosstrack Error: " + str(ct_error))
+            #     print("Front steering angle: " + str(np.degrees(f_delta)) + " degrees")
+            #     print("Steering wheel angle: " + str(steering_angle) + " degrees" )
+            #     print("\n")
 
             current_time = rospy.get_time()
             filt_vel     = self.speed_filter.get_data(self.speed)

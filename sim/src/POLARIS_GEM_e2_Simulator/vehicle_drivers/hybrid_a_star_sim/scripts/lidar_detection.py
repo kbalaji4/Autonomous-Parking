@@ -76,7 +76,7 @@ def pointcloud_callback(msg):
         scaled_points = scaler.fit_transform(downsampled_points)
         
         # dbscan for unsupervised clustering
-        clustering = DBSCAN(eps=0.05, min_samples=6, n_jobs=-1).fit(scaled_points)
+        clustering = DBSCAN(eps=0.4, min_samples=4, n_jobs=-1).fit(scaled_points)
         
         labels = clustering.labels_
         unique_labels = set(labels)
@@ -91,9 +91,9 @@ def pointcloud_callback(msg):
             class_member_mask = (labels == k)
             cluster = downsampled_points[class_member_mask]
 
-            # if len(cluster) < 5:
-            #     # skip small clusters
-            #     continue 
+            if len(cluster) < 3:
+                # skip small clusters
+                continue 
 
             # get centroid
             centroid = np.mean(cluster, axis=0)
