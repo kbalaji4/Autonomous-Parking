@@ -8,11 +8,11 @@ from matplotlib.collections import PatchCollection
 import matplotlib.animation as animation
 from threading import Lock
 
-from sensor_msgs.msg import NavSatFix
+from sensor_msgs.msg import NavSatFix, PointCloud2
+import sensor_msgs.point_cloud2 as pc2
 from septentrio_gnss_driver.msg import INSNavGeod
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped
-import alvinxy.alvinxy as axy
 
 import sys
 import os
@@ -21,6 +21,7 @@ scripts_dir = os.path.dirname(__file__)
 if scripts_dir not in sys.path:
     sys.path.insert(0, scripts_dir)
 
+from alvin import ll2xy, xy2ll
 from dpp.env.map import Map
 from dpp.env.car import SimpleCar
 from dpp.env.environment import Environment
@@ -54,6 +55,10 @@ class MapPlotter:
         rospy.Subscriber("/septentrio_gnss/navsatfix", NavSatFix, self.gnss_callback)
         rospy.Subscriber("/septentrio_gnss/insnavgeod", INSNavGeod, self.ins_callback)
         rospy.Subscriber("/waypoints", Path, self.path_callback)
+
+        # Subscribers & Publishers
+        self.sub = rospy.Subscriber('/ouster/points', PointCloud2, self.lidar_callback, queue_size=1)
+
         
         # Setup plot
         self.setup_plot()
@@ -65,6 +70,70 @@ class MapPlotter:
         )
         plt.show()
         
+    def filter_points(self, points_array, max_range=10.0, min_height=-1.5, max_height=-0.5):
+        """Filter points based on range and height"""
+        # Calculate distances from origin
+        distances = np.sqrt(points_array[:,0]**2 + points_array[:,1]**2)
+        
+        # Create mask for points within range and height limits
+        mask = (distances < max_range) & \
+            (points_array[:,2] > min_height) & \
+            (points_array[:,2] < max_height)
+        
+        return points_array[mask]
+
+    def lidar_callback(self, msg: PointCloud2):
+        # get state
+        x, y, yaw = self.get_vehicle_state()
+
+        # 2) Convert to numpy Nx3
+        pts = np.array([[p[0],p[1],p[2],p[3]] for p in pc2.read_points(msg, skip_nans=True)])
+        if pts.shape[0] < 50:
+            return
+        
+        # just_filtered_pts = self.filter_points(pts)
+        # filtered_cloud = pc2.create_cloud_xyz32(
+        #     header=msg.header,
+        #     points=just_filtered_pts[:, :3]  # Only use x,y,z coordinates
+        # )
+        # self.filtered_cloud_pub.publish(filtered_cloud)
+        
+        """
+        filter points based on range and height
+        then just pick the first one (not even closest just first) and add it as a cone to the map
+        """
+        
+
+        high_intensity_pts = pts[pts[:,3] > 5000.0] # only strong reflections
+
+        # filter points
+        high_intensity_pts = self.filter_points(high_intensity_pts)
+
+        if len(high_intensity_pts) > 0: # if empty do nothing
+
+            first_pt = high_intensity_pts[0]
+
+            cone_x, cone_y = first_pt[0] + x, first_pt[1] + y
+
+            # print("successfully added cone_x, cone_y: ", cone_x, cone_y)
+            # cone_x, cone_y:  64.24394957565457 15.873146025927554
+
+            if self.map.add_cone(cone_x, cone_y):
+                
+                self.update_obstacles()
+
+        # print("first high intensity point: ", high_intensity_pts[0])
+
+        # could go by min distance too
+
+        # filtered_intense_cloud = pc2.create_cloud_xyz32(
+        #     header=msg.header,
+        #     points=high_intensity_pts[:, :3]  # Only use x,y,z coordinates
+        # )
+        
+        # # Publish filtered cloud
+        # self.filtered_intense_cloud_pub.publish(filtered_intense_cloud)
+
     def setup_plot(self):
         """Initialize the plot with map and static elements"""
         self.fig, self.ax = plt.subplots(figsize=(10, 10))
@@ -79,9 +148,12 @@ class MapPlotter:
         self.ax.set_yticks(np.arange(0, self.map.ly + 1, 10))
         self.ax.grid(True)
         
-        # Plot obstacles
-        for ob in self.map.obs:
-            self.ax.add_patch(Rectangle((ob[0], ob[1]), ob[2], ob[3], fc='gray', ec='k'))
+        # # Plot obstacles
+        # for ob in self.map.obs:
+        #     self.ax.add_patch(Rectangle((ob[0], ob[1]), ob[2], ob[3], fc='gray', ec='k'))
+            
+        self.obstacle_patches = []
+        self.update_obstacles()
         
         # Initialize vehicle position marker
         self.vehicle_marker = self.ax.plot([], [], 'ro', markersize=10)[0]
@@ -121,6 +193,7 @@ class MapPlotter:
         with self.state_lock:
             self.lat = round(msg.latitude, 6)
             self.lon = round(msg.longitude, 6)
+        # print("lat, lon: ", self.lat, self.lon)
     
     def ins_callback(self, msg):
         """Callback for INS heading updates"""
@@ -130,16 +203,10 @@ class MapPlotter:
     def path_callback(self, msg):
         """Callback for path updates"""
         with self.path_lock:
-            # Clear current path data
             self.path_points_x = []
             self.path_points_y = []
             self.path_points_heading = []
             
-            # Clear the path line from the plot
-            if hasattr(self, 'path_line'):
-                self.path_line.set_data([], [])
-            
-            # Add new path points
             for pose in msg.poses:
                 # Get original coordinates
                 x = pose.pose.position.x
@@ -153,13 +220,11 @@ class MapPlotter:
                 self.path_points_x.append(x_shifted)
                 self.path_points_y.append(y_shifted)
                 self.path_points_heading.append(yaw)
-            
-            # Force a redraw of the plot
-            self.fig.canvas.draw_idle()
     
     def wps_to_local_xy(self, lon_wp, lat_wp):
         """Convert GNSS coordinates to local coordinates"""
-        x, y = axy.ll2xy(lat_wp, lon_wp, self.olat, self.olon)
+        x, y = ll2xy(lat_wp, lon_wp, self.olat, self.olon)
+        # print("x, y: ", x, y)
         return x, y
     
     def heading_to_yaw(self, heading_curr):
@@ -187,6 +252,22 @@ class MapPlotter:
             y_shifted = self.map.ly - (self.map.grid_top_left[1] - local_y)
             
             return x_shifted, y_shifted, yaw
+        
+    def update_obstacles(self):
+        """Update obstacle visualization"""
+        # Remove old obstacle patches
+        # for patch in self.obstacle_patches:
+        #     patch.remove()
+        # self.obstacle_patches.clear()
+        
+        # Add new obstacle patches
+        
+        for ob in self.map.obs:
+            self.ax.add_patch(Rectangle((ob[0], ob[1]), ob[2], ob[3], fc='gray', ec='k'))
+        # for ob in self.map.obs:
+        #     rect = Rectangle((ob[0], ob[1]), ob[2], ob[3], fc='gray', ec='k')
+        #     self.ax.add_patch(rect)
+        #     self.obstacle_patches.append(rect)
     
     def update_plot(self, frame):
         """Update the plot with current vehicle position and path"""
