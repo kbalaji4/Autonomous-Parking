@@ -135,6 +135,12 @@ class Hybrid(object):
         lat, lon = xy2ll(x, y, self.olat, self.olon)
         return lon, lat
     
+    def planner_to_local_coords(self, x, y, map):
+        """Convert planner coordinates back to local coordinates"""
+        local_x = x + map.grid_top_left[0]
+        local_y = map.grid_top_left[1] - (map.ly - y)  # Reverse the y-axis flip
+        return local_x, local_y
+    
     def publish_path(self, path_points):
         pub = rospy.Publisher('/waypoints', Path, queue_size=1, latch=True)
         rospy.sleep(1.0)
@@ -322,7 +328,7 @@ class Hybrid(object):
         car.l = 1.75  # Wheelbase: 69 in = 1.75m
         car.carl = 2.62  # Length: 103 in = 2.62m
         car.carw = 1.41  # Width: 55.5 in = 1.41m
-        car.max_phi = 0.7  # Increased maximum steering angle from 0.5 to 0.7
+        car.max_phi = 0.5  # Maximum steering angle
         
         # Adjust grid size based on environment size
         #cell_size = max(0.25, env_size / 200)  # Ensure reasonable number of cells
@@ -331,12 +337,12 @@ class Hybrid(object):
         # Initialize hybrid A* planner with modified parameters for smoother paths
         hastar = HybridAstar(car, grid, reverse=True)
         
-        # Modify weights to prioritize tighter turns and better orientation
-        hastar.w1 = 0.6   # Reduced weight for astar heuristic to allow more exploration
-        hastar.w2 = 0.4   # Increased weight for simple heuristic to favor direct paths
-        hastar.w3 = 0.6   # Reduced weight for steering angle change to allow sharper turns
-        hastar.w4 = 0.8   # Increased weight for turning to prioritize orientation
-        hastar.w5 = 1.5   # Reduced weight for reversing to allow more aggressive maneuvers
+        # Modify weights to prioritize orientation
+        hastar.w1 = 0.8   # weight for astar heuristic
+        hastar.w2 = 0.2   # weight for simple heuristic
+        hastar.w3 = 0.8   # increased weight for steering angle change
+        hastar.w4 = 0.6   # increased weight for turning
+        hastar.w5 = 2.0   # weight for reversing
         
         try:
             #self.setup_vehicle_tracking()
@@ -355,8 +361,9 @@ class Hybrid(object):
             # print('Total time: {}s'.format(round(time()-t, 3)))
             if path:
                 for state in path:
-                    state.pos[0] = state.pos[0] + map.grid_top_left[0]
-                    state.pos[1] = map.grid_top_left[1] - state.pos[1]
+                    local_x, local_y = self.planner_to_local_coords(state.pos[0], state.pos[1], map)
+                    state.pos[0] = local_x
+                    state.pos[1] = local_y
                     # state.pos[0] = state.pos[0] + center_x - env_size/2
                     # state.pos[1] = state.pos[1] + center_y - env_size/2
                     state.pos[2] = np.degrees(state.pos[2])  # Convert yaw to degrees
