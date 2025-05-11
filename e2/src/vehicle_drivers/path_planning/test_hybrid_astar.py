@@ -226,7 +226,7 @@ def main():
     #glon = -88.2353660
     glat = 40.092788
     glon = -88.235711
-    goal_yaw_deg = 180  # Goal yaw in degrees 180 (facing South)
+    goal_yaw_deg = 0  # Goal yaw in degrees 180 (facing South)
     
     
     
@@ -296,12 +296,12 @@ def main():
     grid = Grid(env, cell_size=map.cell_size)
     
     # Initialize hybrid A* planner with modified parameters for smoother paths
-    hastar = HybridAstar(car, grid, reverse=False)
+    hastar = HybridAstar(car, grid, reverse=True)
     
     #Modify weights to prioritize orientation
     hastar.w1 = 0.8   # Reduced w1 (astar heuristic) to allow more exploration
     hastar.w2 = 0.2   # Increased w2 (simple heuristic) to favor direct paths
-    hastar.w3 = 0.8   # Reduced w3 (steering angle change) to allow sharper turns
+    hastar.w3 = 0.8   # Reduced w3 (steering angle change) to allow shar    per turns
     hastar.w4 = 0.6   # Increased w4 (turning weight) to prioritize orientation
     hastar.w5 = 2   # Reduced w5 (reversing weight) to allow more aggressive maneuvers
     
