@@ -28,12 +28,14 @@ class Map:
         self.obs.append([spot[0]-2+0.25,spot[1]-3,0.1,7])
         self.obs.append([spot[0]-2+0.25,spot[1]-3,3.5,0.1]) 
         
-        self.obs.append([spot[0]+2+4,spot[1]-3,0.1,6])  # dummy spot
-        self.obs.append([spot[0]-2+4,spot[1]-3,0.1,6])
-        self.obs.append([spot[0]-2+4,spot[1]-3,4,0.1]) 
-        self.obs.append([spot[0]+2+8,spot[1]-3,0.1,6]) # dummy spot
-        self.obs.append([spot[0]-2+8,spot[1]-3,0.1,6])
-        self.obs.append([spot[0]-2+8,spot[1]-3,4,0.1]) 
+        
+        for i in range(1,7):
+            self.obs.append([spot[0]+2-(3.5*i)-0.25,spot[1]-3,0.1,7]) # dummy spot
+            self.obs.append([spot[0]-2-(3.5*i)+0.25,spot[1]-3,0.1,7])
+            self.obs.append([spot[0]-2-(3.5*i)+0.25,spot[1]-3,3.5,0.1]) 
+            self.obs.append([spot[0]+2+(3.5*i)-0.25,spot[1]-3,0.1,7])  # dummy spot
+            self.obs.append([spot[0]-2+(3.5*i)+0.25,spot[1]-3,0.1,7])
+            self.obs.append([spot[0]-2+(3.5*i)+0.25,spot[1]-3,3.5,0.1]) 
 
     def add_cone(self, x, y):
         """Add a cone as a 0.5x0.5m obstacle at the specified position"""

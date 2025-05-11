@@ -276,7 +276,7 @@ def main():
     start_pos = [start_x_shifted, start_y_shifted, start_yaw_rad]  # Initial yaw in radians
     #goal_pos = [goal_x_shifted, goal_y_shifted, goal_yaw_rad]     # Final yaw in radians
     goal_pos = [goal_x_shifted,goal_y_shifted,goal_yaw_rad]
-    car = SimpleCar(env, start_pos, goal_pos)
+    car = SimpleCar(env, goal_pos, start_pos)
     
     # Update car parameters to match GEM e2 specs
     car.l = 1.75  # Wheelbase: 69 in = 1.75m
@@ -289,7 +289,7 @@ def main():
     grid = Grid(env, cell_size=map.cell_size)
     
     # Initialize hybrid A* planner with modified parameters for smoother paths
-    hastar = HybridAstar(car, grid, reverse=False)
+    hastar = HybridAstar(car, grid, reverse=True)
     
     #Modify weights to prioritize orientation
     hastar.w1 = 0.8   # weight for astar heuristic
