@@ -83,6 +83,19 @@ class PurePursuit(object):
         plt.ion()  # Enable interactive mode
         plt.show(block=False)
 
+        # Initialize CSV logging
+        self.csv_file = open('vehicle_trajectory_latest.csv', mode='w', newline='')
+        self.csv_writer = csv.writer(self.csv_file)
+        self.csv_writer.writerow(['Type', 'Time', 'X', 'Y', 'Yaw', 'Goal idx'])  # CSV header
+
+        # Extra CSV for detailed metrics
+        self.metrics_file = open('controller_metrics_log.csv', mode='w', newline='')
+        self.metrics_writer = csv.writer(self.metrics_file)
+        self.metrics_writer.writerow([
+            'Time (s)', 'X', 'Y', 'Yaw (rad)', 'Speed (m/s)', 'Filtered Speed (m/s)',
+            'CT Error (m)', 'Steering Angle (deg)', 'Wheel Angle (deg)', 'Goal Index'
+        ])
+
         self.rate       = rospy.Rate(10)
 
         self.look_ahead = 4
@@ -401,6 +414,11 @@ class PurePursuit(object):
                     self.goal = idx
                     break
             print(self.goal)
+
+            # Log current position to CSV
+            log_time = time.time() - self.start_time
+            self.csv_writer.writerow(['actual', round(log_time, 2), curr_x, curr_y, curr_yaw, self.goal])
+
             self.goal_pub.publish(Int64(self.goal))
             # finding the distance between the goal point and the vehicle
             # true look-ahead distance between a waypoint and current position
@@ -446,6 +464,13 @@ class PurePursuit(object):
                 print("Steering wheel angle: " + str(steering_angle) + " degrees")
                 print("\n")
 
+            self.metrics_writer.writerow([
+                round(current_time, 2),
+                curr_x, curr_y, curr_yaw,
+                self.speed, round(filt_vel, 3),
+                ct_error, f_delta_deg, steering_angle, self.goal
+            ])
+
             current_time = rospy.get_time()
             filt_vel     = self.speed_filter.get_data(self.speed)
             output_accel = self.pid_speed.get_control(current_time, self.desired_speed - filt_vel)
@@ -477,13 +502,15 @@ class PurePursuit(object):
                 self.accel_pub.publish(self.accel_cmd)
             self.steer_pub.publish(self.steer_cmd)
             self.turn_pub.publish(self.turn_cmd)
-
+            plt.pause(0.001)
             self.rate.sleep()
 
     def __del__(self):
         """Cleanup when the object is destroyed"""
         plt.close('all')
         plt.ioff()  # Turn off interactive mode
+        self.csv_file.close()
+        self.metrics_file.close()
 
 
 def pure_pursuit():

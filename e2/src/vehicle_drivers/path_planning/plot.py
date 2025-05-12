@@ -43,12 +43,7 @@ def plot_from_csv(planned_path_file, actual_path_file):
         reader = csv.reader(f)
         next(reader)  # Skip header
         for row in reader:
-            if row[0] == 'start':
-                start = tuple(map(float, row[1:]))
-            elif row[0] == 'goal':
-                goal = tuple(map(float, row[1:]))
-            elif row[0] == 'path':
-                planned_path.append(tuple(map(float, row[1:])))
+            planned_path.append(tuple(map(float, row[1:])))
     
     # Read actual vehicle trajectory
     actual_path = []
