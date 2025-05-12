@@ -59,6 +59,22 @@ class MapPlotter:
         self.olat = 40.0928563
         self.olon = -88.2359994
         
+        # timestamped vehicle states 
+        self.state_buffer = [] # time, x, y, yaw
+        self.state_buffer_size = 100
+        self.max_time_diff = rospy.Duration(0.1)
+        self.lidar_time_offset = None # idk what lidar is in but it's diff time than rostime
+        self.gnss_time_offset = None # gnss, iss should be rostime but jic
+        self.ins_time_offset = None
+
+        # timestamps with offsets, these are NOT rostime
+        self.gnss_timestamp = None
+        self.ins_timestamp = None
+
+        self.first_gnss_time = None  # Store first GNSS timestamp as reference
+        self.first_lidar_time = None  # Store first LiDAR timestamp
+        self.time_offset = None  # Offset between GNSS and LiDAR time
+        
         # Setup subscribers
         rospy.Subscriber("/septentrio_gnss/navsatfix", NavSatFix, self.gnss_callback)
         rospy.Subscriber("/septentrio_gnss/insnavgeod", INSNavGeod, self.ins_callback)
@@ -98,9 +114,30 @@ class MapPlotter:
         return points_array[mask]
 
     def lidar_callback(self, msg: PointCloud2):
+        if self.first_gnss_time is None:
+            rospy.logwarn("Waiting for first GNSS message...")
+            return
+            
+        if self.first_lidar_time is None:
+            self.first_lidar_time = msg.header.stamp
+            # Calculate offset between GNSS and LiDAR time
+            self.time_offset = self.first_gnss_time - self.first_lidar_time
+            rospy.loginfo(f"Time offset between GNSS and LiDAR: {self.time_offset.to_sec()}")
+        # if self.lidar_time_offset is None:
+        #     ros_now = rospy.Time.now()
+        #     lidar_time = msg.header.stamp
+        #     self.lidar_time_offset = ros_now - lidar_time
+        #     rospy.loginfo(f"Lidar original timestamp: {lidar_time.to_sec()}")
+        
+        # Adjust lidar timestamp
+        adjusted_stamp = msg.header.stamp + self.time_offset
+
         callback_start_time = time.time()
         # get state
         x, y, yaw = self.get_vehicle_state()
+        if x is None:
+            rospy.logwarn("No vehicle state available for LiDAR timestamp")
+            return
         get_vehicle_state_time = time.time() - callback_start_time
         # rospy.loginfo(f"get_vehicle_state started at {callback_start_time}s, took {get_vehicle_state_time:.4f}s")
 
@@ -195,7 +232,9 @@ class MapPlotter:
 
             # marker_array.markers.append(marker)
             marker_id += 1
-            rospy.loginfo(f"Centroid: {centroid[0], centroid[1]}, xy: {x, y}, Marker ID: {marker_id}, timestamp: {msg.header.stamp}")
+            rospy.loginfo(f"curr time: {rospy.Time.now()}")
+            rospy.loginfo(f"gnss timestamp: {self.gnss_timestamp, self.gnss_time_offset}, ins timestamp: {self.ins_timestamp, self.ins_time_offset}")
+            rospy.loginfo(f"Centroid: {centroid[0], centroid[1]}, xy: {x, y}, Marker ID: {marker_id}, timestamp: {msg.header.stamp, adjusted_stamp}")
         
 
             cone_x, cone_y = x + centroid[0], y - centroid[1]
@@ -265,16 +304,41 @@ class MapPlotter:
         return car_collection
         
     def gnss_callback(self, msg):
+        # rospy.loginfo(f"gnss timestamp: {msg.header.stamp}")
         """Callback for GNSS position updates"""
+        # if self.gnss_time_offset is None:
+        #     ros_now = rospy.Time.now()
+        #     gnss_time = msg.header.stamp
+        #     self.gnss_time_offset = ros_now - gnss_time
+        #     rospy.loginfo(f"GNSS original timestamp: {gnss_time.to_sec()}")
+        #     rospy.loginfo(f"ROS now: {ros_now.to_sec()}")
+        # adjusted_stamp = msg.header.stamp + self.gnss_time_offset
+
+        if self.first_gnss_time is None:
+            self.first_gnss_time = msg.header.stamp
+            rospy.loginfo(f"First GNSS timestamp: {self.first_gnss_time.to_sec()}")
         with self.state_lock:
             self.lat = round(msg.latitude, 6)
             self.lon = round(msg.longitude, 6)
+            self.update_state_buffer(msg.header.stamp)
+        # self.gnss_timestamp = adjusted_stamp
+            
         # print("lat, lon: ", self.lat, self.lon)
     
     def ins_callback(self, msg):
+        # rospy.loginfo(f"ins timestamp: {msg.header.stamp}")
         """Callback for INS heading updates"""
+        # if self.ins_time_offset is None:
+        #     ros_now = rospy.Time.now()
+        #     ins_time = msg.header.stamp
+        #     self.ins_time_offset = ros_now - ins_time
+        #     rospy.loginfo(f"INS original timestamp: {ins_time.to_sec()}")
+        #     rospy.loginfo(f"ROS now: {ros_now.to_sec()}")
+        # adjusted_stamp = msg.header.stamp + self.ins_time_offset
         with self.state_lock:
             self.heading = round(msg.heading, 3)
+            # self.ins_timestamp = adjusted_stamp
+            self.update_state_buffer(msg.header.stamp)
     
     def path_callback(self, msg):
         """Callback for path updates"""
@@ -297,6 +361,20 @@ class MapPlotter:
                 self.path_points_y.append(y_shifted)
                 self.path_points_heading.append(yaw)
     
+    def update_state_buffer(self, timestamp):
+        """Update state buffer with new timestamped state"""
+        if self.lon is not None and self.lat is not None and self.heading is not None:
+            local_x, local_y = self.wps_to_local_xy(self.lon, self.lat)
+            yaw = self.heading_to_yaw(self.heading)
+            x_shifted = local_x - self.map.grid_top_left[0]
+            y_shifted = self.map.ly - (self.map.grid_top_left[1] - local_y)
+            
+            self.state_buffer.append((timestamp, x_shifted, y_shifted, yaw))
+            
+            # Keep buffer size limited
+            if len(self.state_buffer) > self.state_buffer_size:
+                self.state_buffer.pop(0)
+
     def wps_to_local_xy(self, lon_wp, lat_wp):
         """Convert GNSS coordinates to local coordinates"""
         x, y = ll2xy(lat_wp, lon_wp, self.olat, self.olon)
@@ -311,23 +389,48 @@ class MapPlotter:
             yaw_curr = np.radians(90 - heading_curr)
         return yaw_curr
     
-    def get_vehicle_state(self):
+    def get_vehicle_state(self, timestamp=None):
         """Get current vehicle state in local coordinates"""
         with self.state_lock:
-            if self.lon is None or self.lat is None or self.heading is None:
+            if not self.state_buffer:
+                rospy.logwarn("State buffer is empty")
                 return None, None, None
+            if timestamp is None:
+                # If no timestamp provided, return most recent state
+                latest_state = self.state_buffer[-1]
+                rospy.logdebug(f"Using latest state from time {latest_state[0].to_sec()}")
+                return latest_state[1:]
             
-            # Convert to local coordinates
-            local_x, local_y = self.wps_to_local_xy(self.lon, self.lat)
+            closest_state = min(self.state_buffer, 
+                          key=lambda x: abs((x[0] - timestamp).to_sec()))
             
-            # Convert heading to yaw
-            yaw = self.heading_to_yaw(self.heading)
+            time_diff = abs((closest_state[0] - timestamp).to_sec())
+            if time_diff > 0.1:  # More than 100ms difference
+                rospy.logwarn(f"Large time difference ({time_diff:.3f}s) between requested time " 
+                            f"({timestamp.to_sec():.3f}) and closest state time "
+                            f"({closest_state[0].to_sec():.3f})")
+        
+            # if self.lon is None or self.lat is None or self.heading is None:
+            #     return None, None, None
+                
+            # # Convert to local coordinates
+            # local_x, local_y = self.wps_to_local_xy(self.lon, self.lat)
             
-            # Shift coordinates relative to map origin
-            x_shifted = local_x - self.map.grid_top_left[0]
-            y_shifted = self.map.ly - (self.map.grid_top_left[1] - local_y)
+            # # Convert heading to yaw
+            # yaw = self.heading_to_yaw(self.heading)
             
-            return x_shifted, y_shifted, yaw
+            # # Shift coordinates relative to map origin
+            # x_shifted = local_x - self.map.grid_top_left[0]
+            # y_shifted = self.map.ly - (self.map.grid_top_left[1] - local_y)
+            
+            # return x_shifted, y_shifted, yaw
+            if len(self.state_buffer) > 1:
+                oldest_time = self.state_buffer[0][0].to_sec()
+                newest_time = self.state_buffer[-1][0].to_sec()
+                rospy.logdebug(f"State buffer spans {oldest_time:.3f} to {newest_time:.3f} "
+                            f"({newest_time - oldest_time:.3f}s)")
+                
+            return closest_state[1:]  # Return x, y, yaw
         
     def update_obstacles(self):
         """Update obstacle visualization"""
