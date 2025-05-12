@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import rospy
 import sensor_msgs.point_cloud2 as pc2
+from std_msgs.msg import Float32MultiArray
 from sensor_msgs.msg import PointCloud2
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point, PoseStamped
@@ -26,23 +27,26 @@ class ConeMapper:
     def __init__(self):
         rospy.init_node('cone_mapper')
         # world frame for output poses
-        self.world_frame = rospy.get_param('~world_frame','base_link')
+        # self.world_frame = rospy.get_param('~world_frame','base_link')
 
         # Subscribers & Publishers
         self.sub = rospy.Subscriber('/ouster/points', PointCloud2, self.cb, queue_size=1)
 
-        self.filtered_cloud_pub = rospy.Publisher('/filtered_points', PointCloud2, queue_size=1)
-        self.filtered_intense_cloud_pub = rospy.Publisher('/filtered_intense_points', PointCloud2, queue_size=1)
-        self.pub_markers = rospy.Publisher('/cone_world_positions', PoseStamped, queue_size=10)
-        self.marker_pub = rospy.Publisher('/lidar_obstacles', MarkerArray, queue_size=1)
+        self.filtered_cloud_pub = rospy.Publisher('/filtered_points_sim', PointCloud2, queue_size=1)
+        self.filtered_intense_cloud_pub = rospy.Publisher('/filtered_intense_points_sim', PointCloud2, queue_size=1)
+        self.pub_markers = rospy.Publisher('/cone_world_positions_sim', PoseStamped, queue_size=10)
+        self.marker_pub = rospy.Publisher('/lidar_obstacles_sim', MarkerArray, queue_size=1)
 
-        # TF2 listener to transform cloud into world_frame
-        self.tfbuf = tf2_ros.Buffer()
-        tf2_ros.TransformListener(self.tfbuf)
+        self.cone_xy_pub = rospy.Publisher('/cone_xy', Float32MultiArray, queue_size=1)
 
-        # TF listener for manual cloud→world (fallback)
-        self.tf = tf.TransformListener()
-    def filter_points(self, points_array, max_range=10.0, min_height=-1.5, max_height=-0.5):
+        # # TF2 listener to transform cloud into world_frame
+        # self.tfbuf = tf2_ros.Buffer()
+        # tf2_ros.TransformListener(self.tfbuf)
+
+        # # TF listener for manual cloud→world (fallback)
+        # self.tf = tf.TransformListener()
+
+    def filter_points(self, points_array, max_range=15.0, min_height=-1.5, max_height=-1.0): # gets cone stripes
         """Filter points based on range and height"""
         # Calculate distances from origin
         distances = np.sqrt(points_array[:,0]**2 + points_array[:,1]**2)
@@ -68,13 +72,14 @@ class ConeMapper:
         )
         self.filtered_cloud_pub.publish(filtered_cloud)
         
-        print("points.shape: ", pts.shape)
-        print("4th col max min mean: ", np.max(pts[:,3]), np.min(pts[:,3]), np.mean(pts[:,3]))
+        # print("points.shape: ", pts.shape)
+        # print("4th col max min mean: ", np.max(pts[:,3]), np.min(pts[:,3]), np.mean(pts[:,3]))
         high_intensity_pts = pts[pts[:,3] > 5000.0] # only strong reflections
-        print("high_intensity points shape: ", high_intensity_pts.shape)
+        
 
         # filter points
         high_intensity_pts = self.filter_points(high_intensity_pts)
+        # print("high_intensity points shape: ", high_intensity_pts.shape)
 
         filtered_intense_cloud = pc2.create_cloud_xyz32(
             header=msg.header,
@@ -84,45 +89,15 @@ class ConeMapper:
         # Publish filtered cloud
         self.filtered_intense_cloud_pub.publish(filtered_intense_cloud)
 
-        # marker_array = MarkerArray()
-        # marker_id = 0
-        # for point in high_intensity_pts:      
-        #     # Create a marker for this point
-        #     marker = Marker()
-        #     marker.header = msg.header
-        #     marker.ns = "obstacles"
-        #     marker.id = marker_id
-        #     marker.type = Marker.SPHERE
-        #     marker.action = Marker.ADD
-        #     marker.pose.position.x = point[0]
-        #     marker.pose.position.y = point[1]
-        #     marker.pose.position.z = point[2]
-        #     marker.pose.orientation.w = 1.0
-
-        #     # cluster dims for our markers
-        #     marker.scale.x = 0.5
-        #     marker.scale.y = 0.5
-        #     # marker.scale.x = max(0.3, 2*cluster_std[0])
-        #     # marker.scale.y = max(0.3, 2*cluster_std[1])
-        #     marker.scale.z = 0.5
-
-        #     marker.color.a = 0.7
-        #     marker.color.r = 1.0
-        #     marker.color.g = 0.0
-        #     marker.color.b = 0.0
-
-        #     marker_array.markers.append(marker)
-        #     marker_id += 1
-
-        # # Publish the obstacles markers
-        # self.marker_pub.publish(marker_array)
         # 3) Make Open3D pointcloud
 
-        # pcd = o3d.geometry.PointCloud()
-        # pcd.points = o3d.utility.Vector3dVector(pts)
+        pts = high_intensity_pts[:,:3] # xyz no intensity
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pts)
 
         # # 4) Voxel downsample
-        # pcd = pcd.voxel_down_sample(voxel_size=0.1)
+        # pcd = pcd.voxel_down_sample(voxel_size=0.05)
 
         # # 5) Remove ground plane via RANSAC
         # plane_model, inliers = pcd.segment_plane(
@@ -132,19 +107,71 @@ class ConeMapper:
         # )
         # pcd_without_ground = pcd.select_by_index(inliers, invert=True)
 
-        # # 6) Height & range crop in camera frame: if needed,
-        # #    you could re-filter by z or xy here
+        # 6) Height & range crop in camera frame: if needed,
+        #    you could re-filter by z or xy here
 
-        # # 7) DBSCAN clustering
-        # labels = np.array(pcd_without_ground.cluster_dbscan(eps=0.3, min_points=10, print_progress=False))
-        # unique_labels = set(labels) - {-1}
+        # 7) DBSCAN clustering
+        labels = np.array(pcd.cluster_dbscan(eps=0.3, min_points=3, print_progress=False))
+        # print("labels: ", labels)
+        unique_labels = set(labels) - {-1}
+        print("unique labels: ", len(labels), len(unique_labels))
 
-        # # 8) Publish centroids
+        marker_array = MarkerArray()
+        marker_id = 0
+        # 8) Publish centroids
+        for k in unique_labels:
+            class_member_mask = (labels == k)
+            cluster = np.asarray(pcd.points)[class_member_mask]
+
+            # if len(cluster) < 3:
+            #     # skip small clusters
+            #     continue 
+
+            # get centroid
+            centroid = np.mean(cluster, axis=0)
+            
+            # Create a marker for this obstacle
+            marker = Marker()
+            marker.header = msg.header
+            marker.ns = "obstacles"
+            marker.id = marker_id
+            marker.type = Marker.SPHERE
+            marker.action = Marker.ADD
+            marker.pose.position.x = centroid[0]
+            marker.pose.position.y = centroid[1]
+            marker.pose.position.z = centroid[2]
+            marker.pose.orientation.w = 1.0
+
+            # cluster dims for our markers
+            cluster_std = np.std(cluster, axis=0)
+            marker.scale.x = 0.5
+            marker.scale.y = 0.5
+            # marker.scale.x = max(0.3, 2*cluster_std[0])
+            # marker.scale.y = max(0.3, 2*cluster_std[1])
+            marker.scale.z = 0.5
+
+            marker.color.a = 0.7
+            marker.color.r = 1.0
+            marker.color.g = 0.0
+            marker.color.b = 0.0
+
+            marker_array.markers.append(marker)
+            marker_id += 1
+            rospy.loginfo(f"Centroid: {centroid}, Marker ID: {marker_id}")
+            # publish centroid 
+            msg - Float32MultiArray()
+            msg.data = [centroid[0], centroid[1]]
+            self.cone_xy_pub.publish(msg)
+
+
+        # Publish the obstacles markers
+        self.marker_pub.publish(marker_array)
+        
         # for lid in unique_labels:
         #     idx = np.where(labels==lid)[0]
-        #     cluster = np.asarray(pcd_without_ground.points)[idx]
-        #     if len(cluster)<5: 
-        #         continue
+        #     cluster = np.asarray(pcd.points)[idx]
+        #     # if len(cluster)<2: 
+        #     #     continue
         #     centroid = cluster.mean(axis=0)
         #     ps = PoseStamped()
         #     ps.header.stamp = msg.header.stamp

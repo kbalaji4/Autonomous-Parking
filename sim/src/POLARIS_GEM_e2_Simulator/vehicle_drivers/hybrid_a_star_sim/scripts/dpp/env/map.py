@@ -34,7 +34,7 @@ class Map:
         """Add a cone as a 0.5x0.5m obstacle at the specified position"""
         # Check if there's already a cone nearby
         for cone in self.cones:
-            if ((cone[0] - x) ** 2 + (cone[1] - y) ** 2) ** 0.5 < 0.5:
+            if ((cone[0] - x) ** 2 + (cone[1] - y) ** 2) ** 0.5 < 10:
                 return False  # Cone already exists nearby
         
         # Add new cone
