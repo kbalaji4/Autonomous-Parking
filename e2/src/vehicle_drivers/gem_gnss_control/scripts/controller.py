@@ -372,11 +372,6 @@ class PurePursuit(object):
                 goal_y = self.path_points_y[-1]
                 distance_to_goal = self.dist((curr_x, curr_y), (goal_x, goal_y))
 
-                if distance_to_goal < self.goal_reached_threshold:
-                    rospy.loginfo("Goal waypoint reached. Stopping the car.")
-                    #self.stop_car()
-                    #break  # Exit the loop to stop the controller
-            
             # Check if waypoint is behind the car
             waypoint_vector = [self.path_points_x[self.goal] - curr_x, self.path_points_y[self.goal] - curr_y]
             vehicle_heading_vector = [np.cos(curr_yaw), np.sin(curr_yaw)]
@@ -492,7 +487,7 @@ class PurePursuit(object):
             self.steer_cmd.angular_position = np.radians(steering_angle)
             if distance_to_goal < self.goal_reached_threshold and len(self.path_points_heading) > 0:
                 print("Stopping the car as goal is reached")
-                self.brake_cmd.f64_cmd = 0.5  # Apply full brake
+                self.brake_cmd.f64_cmd = 0.5  # Apply half brake
                 #self.accel_cmd.f64_cmd = 0.0  # Disable acceleration
                 self.brake_pub.publish(self.brake_cmd)
                 if np.abs(self.heading - self.path_points_heading[-1]) < 1:

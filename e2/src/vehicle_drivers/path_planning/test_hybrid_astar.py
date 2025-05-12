@@ -214,7 +214,7 @@ def main():
     # Define start and goal GPS coordinates and yaw angles (in degrees)
     slat =  olat
     slon = olon
-    start_yaw_deg = 270 # Start yaw in degrees 0 (facing East)
+    start_yaw_deg = 90 # Start yaw in degrees 0 (facing East)
     
     #glat = 40.0928328
     #glon = -88.2353660
@@ -302,9 +302,7 @@ def main():
     
     # Plan path
     print("Planning path...")
-    #print(f"Environment size: {env_size:.2f}m x {env_size:.2f}m")
     print(f"Cell size: {map.cell_size:.2f}m")
-    #print(f"Environment center: x={center_x:.2f}, y={center_y:.2f}")
     print(f"Start position (local): x={start_x:.2f}, y={start_y:.2f}, yaw={start_yaw_deg:.3f}°")
     print(f"Goal position (local): x={goal_x:.2f}, y={goal_y:.2f}, yaw={goal_yaw_deg:.3f}°")
     print(f"Start position (shifted): x={start_x_shifted:.2f}, y={start_y_shifted:.2f}, yaw={start_yaw_deg:.3f}°")
@@ -325,42 +323,19 @@ def main():
     for state in path:
         state.pos[0] = state.pos[0] + map.grid_top_left[0]
         state.pos[1] = map.grid_top_left[1] - state.pos[1]
-        # state.pos[0] = state.pos[0] + center_x - env_size/2
-        # state.pos[1] = state.pos[1] + center_y - env_size/2
         state.pos[2] = np.degrees(state.pos[2])  # Convert yaw to degrees
         # Normalize yaw to [0, 360)
         state.pos[2] = state.pos[2] % 360.0
         state.pos[2] = (90-state.pos[2]) % 360.0
-    
-    # Downsample path for waypoints (use smaller step for shorter paths)
-    step = max(1, len(path) // 50)  # Ensure we get at least 30 points
+  
+    step = max(1, len(path) // 50)  
     path = path[::step] + [path[-1]]
-    
-    # Smooth the path
-    #print("Smoothing path...")
-    #smoothed_path = smooth_path(path, smoothing=0.2)  # Reduced smoothing for more detail
-    
-    # Ensure start and goal orientations are correct
-   # smoothed_path[0].pos[2] = start_yaw_deg
-    #smoothed_path[-1].pos[2] = goal_yaw_deg
-    
-    # Save both original and smoothed paths to CSV with local coordinates and yaw in degrees
     save_path_to_csv(path, 'hybrid_astar_path_original.csv', olat, olon)
-    #save_path_to_csv(smoothed_path, 'hybrid_astar_path_smoothed.csv', olat, olon)
     print(f"Paths saved to waypoints/")
-    
-    # Print some statistics
     print(f"Number of waypoints (original): {len(path)}")
-    #print(f"Number of waypoints (smoothed): {len(smoothed_path)}")
-    #print(f"Start position: x={smoothed_path[0].pos[0]:.3f}, y={smoothed_path[0].pos[1]:.3f}, yaw={smoothed_path[0].pos[2]:.3f}°")
-    #print(f"Goal position: x={smoothed_path[-1].pos[0]:.3f}, y={smoothed_path[-1].pos[1]:.3f}, yaw={smoothed_path[-1].pos[2]:.3f}°")
-    
-    # Plot both paths
     print("Plotting original path...")
     plot_path(env, path, closed_, olat, olon)
-    #print("Plotting smoothed path...")
-    #plot_path(env, smoothed_path, closed_, olat, olon)
-    
+   
 def gotogoal(goal_pos):
     # Set origin GPS coordinates
     olat = 40.0928563
