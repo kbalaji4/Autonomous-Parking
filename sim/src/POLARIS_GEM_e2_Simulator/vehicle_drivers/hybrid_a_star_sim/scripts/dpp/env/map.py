@@ -29,23 +29,32 @@ class Map:
         self.obs.append([spot[0]+2+8,spot[1]-3,0.1,6]) # dummy spot
         self.obs.append([spot[0]-2+8,spot[1]-3,0.1,6])
         self.obs.append([spot[0]-2+8,spot[1]-3,4,0.1]) 
+        # cone = (80.8074834169867, 10.465947512581053)
+        # self.obs.append([cone[0]-0.25,cone[1]-0.25,0.5,0.5])
 
     def add_cone(self, x, y):
         """Add a cone as a 0.5x0.5m obstacle at the specified position"""
-        # Check if there's already a cone nearby
-        for cone in self.cones:
-            if ((cone[0] - x) ** 2 + (cone[1] - y) ** 2) ** 0.5 < 10:
-                return False  # Cone already exists nearby
+        # Check if there's already a cone nearby (within 1m)
+        # for cone in self.cones:
+        #     if ((cone[0] - x) ** 2 + (cone[1] - y) ** 2) ** 0.5 < 5.0:
+        #         print(f"Failed to add cone at ({x}, {y})")
+        #         return False  # Cone already exists nearby
+        # if len(self.cones) > 0:
+        #     return False
         
-        # Add new cone
+        # Add new cone to tracking list
         self.cones.append((x, y))
+        
+        # Add cone as obstacle (format: [x, y, width, height])
+        # Center the 0.5x0.5m obstacle at (x,y)
+        cone_obstacle = [x - 0.25, y - 0.25, 0.5, 0.5]
+        self.obs.append(cone_obstacle)
+        
         print(f"Added cone at ({x}, {y})")
-        self.obs.append((x, y, 0.5, 0.5))  # Center the 0.5x0.5m obstacle at (x,y)
-        print(len(self.obs))
         return True
 
     def clear_cones(self):
         """Remove all cones from the map"""
         # Remove cone obstacles from obs list
-        self.obs = [ob for ob in self.obs if ob not in [(x - 0.25, y - 0.25, 0.5, 0.5) for x, y in self.cones]]
+        self.obs = [ob for ob in self.obs if ob not in [[x - 0.25, y - 0.25, 0.5, 0.5] for x, y in self.cones]]
         self.cones = [] 

@@ -214,7 +214,7 @@ def main():
     # Define start and goal GPS coordinates and yaw angles (in degrees)
     slat =  olat
     slon = olon
-    start_yaw_deg = 90 # Start yaw in degrees 0 (facing East)
+    start_yaw_deg = 270 # Start yaw in degrees 0 (facing East)
     
     #glat = 40.0928328
     #glon = -88.2353660
@@ -276,6 +276,8 @@ def main():
     start_pos = [start_x_shifted, start_y_shifted, start_yaw_rad]  # Initial yaw in radians
     #goal_pos = [goal_x_shifted, goal_y_shifted, goal_yaw_rad]     # Final yaw in radians
     goal_pos = [goal_x_shifted,goal_y_shifted,goal_yaw_rad]
+    #print(goal_pos)
+    goal_pos2 = [49.5948455962297+3.5, 12.416345388704688, 4.71238898038469]
     car = SimpleCar(env, goal_pos, start_pos)
     
     # Update car parameters to match GEM e2 specs
@@ -308,7 +310,181 @@ def main():
     print(f"Start position (shifted): x={start_x_shifted:.2f}, y={start_y_shifted:.2f}, yaw={start_yaw_deg:.3f}°")
     print(f"Goal position (shifted): x={goal_x_shifted:.2f}, y={goal_y_shifted:.2f}, yaw={goal_yaw_deg:.3f}°")
     t = time()
+    try:
+        path, closed_ = hastar.search_path(heu=1, extra=True)
+    except Exception as e:
+        print(f"Error: {e}")
+        return
+    print('Total time: {}s'.format(round(time()-t, 3)))
+    
+    if not path:
+        print('No valid path found!')
+        return
+    
+    # Convert path back to original coordinates and yaw to degrees
+    for state in path:
+        state.pos[0] = state.pos[0] + map.grid_top_left[0]
+        state.pos[1] = map.grid_top_left[1] - state.pos[1]
+        # state.pos[0] = state.pos[0] + center_x - env_size/2
+        # state.pos[1] = state.pos[1] + center_y - env_size/2
+        state.pos[2] = np.degrees(state.pos[2])  # Convert yaw to degrees
+        # Normalize yaw to [0, 360)
+        state.pos[2] = state.pos[2] % 360.0
+        state.pos[2] = (90-state.pos[2]) % 360.0
+    
+    # Downsample path for waypoints (use smaller step for shorter paths)
+    step = max(1, len(path) // 50)  # Ensure we get at least 30 points
+    path = path[::step] + [path[-1]]
+    
+    # Smooth the path
+    #print("Smoothing path...")
+    #smoothed_path = smooth_path(path, smoothing=0.2)  # Reduced smoothing for more detail
+    
+    # Ensure start and goal orientations are correct
+   # smoothed_path[0].pos[2] = start_yaw_deg
+    #smoothed_path[-1].pos[2] = goal_yaw_deg
+    
+    # Save both original and smoothed paths to CSV with local coordinates and yaw in degrees
+    save_path_to_csv(path, 'hybrid_astar_path_original.csv', olat, olon)
+    #save_path_to_csv(smoothed_path, 'hybrid_astar_path_smoothed.csv', olat, olon)
+    print(f"Paths saved to waypoints/")
+    
+    # Print some statistics
+    print(f"Number of waypoints (original): {len(path)}")
+    #print(f"Number of waypoints (smoothed): {len(smoothed_path)}")
+    #print(f"Start position: x={smoothed_path[0].pos[0]:.3f}, y={smoothed_path[0].pos[1]:.3f}, yaw={smoothed_path[0].pos[2]:.3f}°")
+    #print(f"Goal position: x={smoothed_path[-1].pos[0]:.3f}, y={smoothed_path[-1].pos[1]:.3f}, yaw={smoothed_path[-1].pos[2]:.3f}°")
+    
+    # Plot both paths
+    print("Plotting original path...")
+    plot_path(env, path, closed_, olat, olon)
+    #print("Plotting smoothed path...")
+    #plot_path(env, smoothed_path, closed_, olat, olon)
+    
+def gotogoal(goal_pos):
+    # Set origin GPS coordinates
+    olat = 40.0928563
+    olon = -88.2359994
+    
+    # Create test case
+    #tc = TestCase()
+    map = Map()
+    map.add_walls()
+    
+    
+   
+
+
+
+    park_spot = wps_to_local_xy(-88.235711, 40.092788,  olat, olon)
+    park_spot_shifted = (park_spot[0] - map.grid_top_left[0], map.ly - (map.grid_top_left[1] - park_spot[1]))
+    print(park_spot_shifted)
+    #print(wps_to_local_xy(-88.236153, 40.092898,  olat, olon))
+
+    
+    # Define start and goal GPS coordinates and yaw angles (in degrees)
+    slat =  olat
+    slon = olon
+    start_yaw_deg = 90 # Start yaw in degrees 0 (facing East)
+    
+    #glat = 40.0928328
+    #glon = -88.2353660
+    glat = 40.092788
+    glon = -88.235711
+    goal_yaw_deg = 180  # Goal yaw in degrees 180 (facing South)
+    
+    
+    
+    
+    
+    # Convert yaw angles from degrees to radians
+    start_yaw_rad = car_heading_to_planner_yaw(start_yaw_deg)
+    goal_yaw_rad = car_heading_to_planner_yaw(goal_yaw_deg)
+    
+    # Convert GPS coordinates to local coordinates
+    start_x, start_y = wps_to_local_xy(slon, slat, olat, olon)
+    goal_x, goal_y = wps_to_local_xy(glon, glat, olat, olon)
+    
+    # # Calculate environment size and center
+    # dx = abs(goal_x - start_x)
+    # dy = abs(goal_y - start_y)
+    # env_size = max(dx, dy) * 2.0  # Make it twice as large as needed
+    # env_size = max(env_size, 100.0)  # Ensure minimum size of 100m
+    
+    # # Calculate center point
+    # center_x = (start_x + goal_x) / 2.0
+    # center_y = (start_y + goal_y) / 2.0
+    
+    # # Shift coordinates relative to center
+    # start_x_shifted = start_x - center_x + env_size/2
+    # start_y_shifted = start_y - center_y + env_size/2
+    # goal_x_shifted = goal_x - center_x + env_size/2
+    # goal_y_shifted = goal_y - center_y + env_size/2
+    
+    # # Initialize environment and car with shifted coordinates and yaw angles
+    # env = Environment(tc.obs, lx=100, ly=100)  # Set environment size based on coordinates
+    
+    # grid_top_left = (-25, 10)
+    # grid_bottom_right = (85, -20)
+    # lx = grid_bottom_right[0] - grid_top_left[0]  # 110m
+    # ly = grid_top_left[1] - grid_bottom_right[1]  # 30m
+
+    # Initialize environment with static grid dimensions x,y,w,h
+    
+    env = Environment(map.obs, lx=map.lx, ly=map.ly)
+    print(start_y)
+    print(goal_y)
+    
+    
+    # Shift coordinates relative to the static grid's top-left corner
+    start_x_shifted = start_x - map.grid_top_left[0]
+    start_y_shifted = map.ly - (map.grid_top_left[1] - start_y)  # Flip y-axis
+    goal_x_shifted = goal_x - map.grid_top_left[0]
+    goal_y_shifted = map.ly - (map.grid_top_left[1] - goal_y)  # Flip y-axis
+    
+    
+    
+    start_pos = [start_x_shifted, start_y_shifted, start_yaw_rad]  # Initial yaw in radians
+    #goal_pos = [goal_x_shifted, goal_y_shifted, goal_yaw_rad]     # Final yaw in radians
+    #goal_pos = [goal_x_shifted,goal_y_shifted,goal_yaw_rad]
+    #print(goal_pos)
+    
+    
+    car = SimpleCar(env, start_pos, goal_pos)
+    
+    # Update car parameters to match GEM e2 specs
+    car.l = 1.75  # Wheelbase: 69 in = 1.75m
+    car.carl = 2.62  # Length: 103 in = 2.62m
+    car.carw = 1.41  # Width: 55.5 in = 1.41m
+    car.max_phi = 0.5  # Maximum steering angle
+    
+    # Adjust grid size based on environment size
+    #cell_size = max(0.25, map.lx / 200)  # Ensure reasonable number of cells
+    grid = Grid(env, cell_size=map.cell_size)
+    
+    # Initialize hybrid A* planner with modified parameters for smoother paths
+    hastar = HybridAstar(car, grid, reverse=False)
+    
+    #Modify weights to prioritize orientation
+    hastar.w1 = 0.8   # weight for astar heuristic
+    hastar.w2 = 0.2   # weight for simple heuristic
+    hastar.w3 = 0.8   # increased weight for steering angle change
+    hastar.w4 = 0.6   # increased weight for turning
+    hastar.w5 = 2   # weight for reversing
+    
+    # Plan path
+    print("Planning path...")
+    #print(f"Environment size: {env_size:.2f}m x {env_size:.2f}m")
+    print(f"Cell size: {map.cell_size:.2f}m")
+    #print(f"Environment center: x={center_x:.2f}, y={center_y:.2f}")
+    print(f"Start position (local): x={start_x:.2f}, y={start_y:.2f}, yaw={start_yaw_deg:.3f}°")
+    print(f"Goal position (local): x={goal_x:.2f}, y={goal_y:.2f}, yaw={goal_yaw_deg:.3f}°")
+    print(f"Start position (shifted): x={start_x_shifted:.2f}, y={start_y_shifted:.2f}, yaw={start_yaw_deg:.3f}°")
+    print(f"Goal position (shifted): x={goal_x_shifted:.2f}, y={goal_y_shifted:.2f}, yaw={goal_yaw_deg:.3f}°")
+    t = time()
+  
     path, closed_ = hastar.search_path(heu=1, extra=True)
+
     print('Total time: {}s'.format(round(time()-t, 3)))
     
     if not path:
@@ -356,4 +532,11 @@ def main():
     #plot_path(env, smoothed_path, closed_, olat, olon)
 
 if __name__ == '__main__':
-    main() 
+    main()
+    # goal_pos_arr = [[49.5948455962297, 12.416345388704688,4.71238898038469],[49.5948455962297+3.5, 12.416345388704688, 4.71238898038469]]
+    # for goal_pos in goal_pos_arr:
+    #     try:
+    #         gotogoal(goal_pos)
+    #     except Exception as e:
+    #         print(f"Obstacle detected at {goal_pos} going to next goal")
+    #         continue

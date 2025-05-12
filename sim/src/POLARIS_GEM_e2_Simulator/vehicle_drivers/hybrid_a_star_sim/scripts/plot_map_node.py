@@ -2,6 +2,7 @@
 
 import rospy
 import numpy as np
+import time
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from matplotlib.collections import PatchCollection
@@ -63,13 +64,13 @@ class MapPlotter:
         rospy.Subscriber("/septentrio_gnss/insnavgeod", INSNavGeod, self.ins_callback)
         rospy.Subscriber("/waypoints", Path, self.path_callback)
         
-        self.filtered_cloud_pub = rospy.Publisher('/filtered_points_sim', PointCloud2, queue_size=1)
-        self.filtered_intense_cloud_pub = rospy.Publisher('/filtered_intense_points_sim', PointCloud2, queue_size=1)
-        self.pub_markers = rospy.Publisher('/cone_world_positions_sim', PoseStamped, queue_size=10)
-        self.marker_pub = rospy.Publisher('/lidar_obstacles_sim', MarkerArray, queue_size=1)
+        # self.filtered_cloud_pub = rospy.Publisher('/filtered_points_sim', PointCloud2, queue_size=1)
+        # self.filtered_intense_cloud_pub = rospy.Publisher('/filtered_intense_points_sim', PointCloud2, queue_size=1)
+        # self.pub_markers = rospy.Publisher('/cone_world_positions_sim', PoseStamped, queue_size=10)
+        # self.marker_pub = rospy.Publisher('/lidar_obstacles_sim', MarkerArray, queue_size=1)
 
         # Subscribers & Publishers
-        self.sub = rospy.Subscriber('/ouster/points', PointCloud2, self.lidar_callback, queue_size=1)
+        self.sub = rospy.Subscriber('/ouster/points', PointCloud2, self.lidar_callback, queue_size=10)
 
         
         # Setup plot
@@ -97,49 +98,67 @@ class MapPlotter:
         return points_array[mask]
 
     def lidar_callback(self, msg: PointCloud2):
+        callback_start_time = time.time()
+        # get state
+        x, y, yaw = self.get_vehicle_state()
+        get_vehicle_state_time = time.time() - callback_start_time
+        # rospy.loginfo(f"get_vehicle_state started at {callback_start_time}s, took {get_vehicle_state_time:.4f}s")
 
+        read_points_start_time = time.time()
         # 2) Convert to numpy Nx3
         pts = np.array([[p[0],p[1],p[2],p[3]] for p in pc2.read_points(msg, skip_nans=True)])
         if pts.shape[0] < 50:
             return
+        read_points_time = time.time() - read_points_start_time
+        # rospy.loginfo(f"read_points started at {read_points_start_time}s, took {read_points_time:.4f}s")
         
-        just_filtered_pts = self.filter_points(pts)
-        filtered_cloud = pc2.create_cloud_xyz32(
-            header=msg.header,
-            points=just_filtered_pts[:, :3]  # Only use x,y,z coordinates
-        )
-        self.filtered_cloud_pub.publish(filtered_cloud)
+        
+        # just_filtered_pts = self.filter_points(pts)
+        # filtered_cloud = pc2.create_cloud_xyz32(
+        #     header=msg.header,
+        #     points=just_filtered_pts[:, :3]  # Only use x,y,z coordinates
+        # )
+        # self.filtered_cloud_pub.publish(filtered_cloud)
         
         # print("points.shape: ", pts.shape)
         # print("4th col max min mean: ", np.max(pts[:,3]), np.min(pts[:,3]), np.mean(pts[:,3]))
+        filter_points_start_time = time.time()
         high_intensity_pts = pts[pts[:,3] > 5000.0] # only strong reflections
         
 
         # filter points
         high_intensity_pts = self.filter_points(high_intensity_pts)
+        filter_points_time = time.time() - filter_points_start_time
+        # rospy.loginfo(f"filter_points started at {filter_points_start_time}s, took {filter_points_time:.4f}s")
         # print("high_intensity points shape: ", high_intensity_pts.shape)
 
-        filtered_intense_cloud = pc2.create_cloud_xyz32(
-            header=msg.header,
-            points=high_intensity_pts[:, :3]  # Only use x,y,z coordinates
-        )
+        # filtered_intense_cloud = pc2.create_cloud_xyz32(
+        #     header=msg.header,
+        #     points=high_intensity_pts[:, :3]  # Only use x,y,z coordinates
+        # )
         
         # Publish filtered cloud
-        self.filtered_intense_cloud_pub.publish(filtered_intense_cloud)
+        # self.filtered_intense_cloud_pub.publish(filtered_intense_cloud)
 
         # 3) Make Open3D pointcloud
 
         pts = high_intensity_pts[:,:3] # xyz no intensity
+        if len(high_intensity_pts) == 0:
+            return
+        
+        dbscan_start_time = time.time()
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(pts)
         labels = np.array(pcd.cluster_dbscan(eps=0.3, min_points=3, print_progress=False))
+        dbscan_end_time = time.time() - dbscan_start_time
+        # rospy.loginfo(f"dbscan started at {dbscan_start_time}s, took {dbscan_end_time:.4f}s")
         # print("labels: ", labels)
         unique_labels = set(labels) - {-1}
-        # print("unique labels: ", len(labels), len(unique_labels))
+        print("num unique labels: ", len(unique_labels))
 
-        marker_array = MarkerArray()
+        # marker_array = MarkerArray()
         marker_id = 0
-        # 8) Publish centroids
+        # 8) Publish centroids if there are any
         for k in unique_labels:
             class_member_mask = (labels == k)
             cluster = np.asarray(pcd.points)[class_member_mask]
@@ -152,45 +171,43 @@ class MapPlotter:
             centroid = np.mean(cluster, axis=0)
             
             # Create a marker for this obstacle
-            marker = Marker()
-            marker.header = msg.header
-            marker.ns = "obstacles"
-            marker.id = marker_id
-            marker.type = Marker.SPHERE
-            marker.action = Marker.ADD
-            marker.pose.position.x = centroid[0]
-            marker.pose.position.y = centroid[1]
-            marker.pose.position.z = centroid[2]
-            marker.pose.orientation.w = 1.0
+            # marker = Marker()
+            # marker.header = msg.header
+            # marker.ns = "obstacles"
+            # marker.id = marker_id
+            # marker.type = Marker.SPHERE
+            # marker.action = Marker.ADD
+            # marker.pose.position.x = centroid[0]
+            # marker.pose.position.y = centroid[1]
+            # marker.pose.position.z = centroid[2]
+            # marker.pose.orientation.w = 1.0
 
-            # cluster dims for our markers
-            cluster_std = np.std(cluster, axis=0)
-            marker.scale.x = 0.5
-            marker.scale.y = 0.5
-            marker.scale.z = 0.5
+            # # cluster dims for our markers
+            # cluster_std = np.std(cluster, axis=0)
+            # marker.scale.x = 0.5
+            # marker.scale.y = 0.5
+            # marker.scale.z = 0.5
 
-            marker.color.a = 0.7
-            marker.color.r = 1.0
-            marker.color.g = 0.0
-            marker.color.b = 0.0
+            # marker.color.a = 0.7
+            # marker.color.r = 1.0
+            # marker.color.g = 0.0
+            # marker.color.b = 0.0
 
-            marker_array.markers.append(marker)
+            # marker_array.markers.append(marker)
             marker_id += 1
-            rospy.loginfo(f"Centroid: {centroid}, Marker ID: {marker_id}")
-            
-            # get state
-            x, y, yaw = self.get_vehicle_state()
+            rospy.loginfo(f"Centroid: {centroid[0], centroid[1]}, xy: {x, y}, Marker ID: {marker_id}, timestamp: {msg.header.stamp}")
+        
 
-            cone_x, cone_y = centroid[0] + x, centroid[1] + y
+            cone_x, cone_y = x + centroid[0], y - centroid[1]
 
             # print("successfully added cone_x, cone_y: ", cone_x, cone_y)
-
-            if self.map.add_cone(cone_x, cone_y):
-                
+            add_cone = self.map.add_cone(cone_x, cone_y)
+            print(add_cone)
+            if add_cone:
                 self.update_obstacles()
 
         # vizualization: obstacle markers
-        self.marker_pub.publish(marker_array)
+        # self.marker_pub.publish(marker_array)
 
 
     def setup_plot(self):
@@ -315,18 +332,19 @@ class MapPlotter:
     def update_obstacles(self):
         """Update obstacle visualization"""
         # Remove old obstacle patches
-        # for patch in self.obstacle_patches:
-        #     patch.remove()
-        # self.obstacle_patches.clear()
+        for patch in self.obstacle_patches:
+            patch.remove()
+        self.obstacle_patches.clear()
         
         # Add new obstacle patches
-        
         for ob in self.map.obs:
-            self.ax.add_patch(Rectangle((ob[0], ob[1]), ob[2], ob[3], fc='gray', ec='k'))
-        # for ob in self.map.obs:
-        #     rect = Rectangle((ob[0], ob[1]), ob[2], ob[3], fc='gray', ec='k')
-        #     self.ax.add_patch(rect)
-        #     self.obstacle_patches.append(rect)
+            rect = Rectangle((ob[0], ob[1]), ob[2], ob[3], fc='gray', ec='k')
+            self.ax.add_patch(rect)
+            self.obstacle_patches.append(rect)
+        
+        # Force redraw
+        self.fig.canvas.draw_idle()
+        self.fig.canvas.flush_events()
     
     def update_plot(self, frame):
         """Update the plot with current vehicle position and path"""

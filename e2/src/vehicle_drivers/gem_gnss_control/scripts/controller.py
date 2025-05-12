@@ -83,19 +83,6 @@ class PurePursuit(object):
         plt.ion()  # Enable interactive mode
         plt.show(block=False)
 
-        # Initialize CSV logging
-        self.csv_file = open('vehicle_trajectory_latest.csv', mode='w', newline='')
-        self.csv_writer = csv.writer(self.csv_file)
-        self.csv_writer.writerow(['Type', 'Time', 'X', 'Y', 'Yaw', 'Goal idx'])  # CSV header
-
-        # Extra CSV for detailed metrics
-        self.metrics_file = open('controller_metrics_log.csv', mode='w', newline='')
-        self.metrics_writer = csv.writer(self.metrics_file)
-        self.metrics_writer.writerow([
-            'Time (s)', 'X', 'Y', 'Yaw (rad)', 'Speed (m/s)', 'Filtered Speed (m/s)',
-            'CT Error (m)', 'Steering Angle (deg)', 'Wheel Angle (deg)', 'Goal Index'
-        ])
-
         self.rate       = rospy.Rate(10)
 
         self.look_ahead = 4
@@ -115,6 +102,8 @@ class PurePursuit(object):
         self.path_points_heading = []
         
         rospy.Subscriber("/waypoints", Path, self.path_callback)
+        
+        rospy.Subscriber("/detection_world_positions", PoseStamped, self.detection_callback)
 
         self.enable_sub = rospy.Subscriber("/pacmod/as_tx/enable", Bool, self.enable_callback)
 
@@ -139,6 +128,8 @@ class PurePursuit(object):
 
         self.gem_enable    = False
         self.pacmod_enable = False
+        
+        
 
         # GEM vehicle enable, publish once
         self.enable_pub = rospy.Publisher('/pacmod/as_rx/enable', Bool, queue_size=1)
@@ -174,6 +165,8 @@ class PurePursuit(object):
         self.steer_cmd = PositionWithSpeed()
         self.steer_cmd.angular_position = 0.0 # radians, -: clockwise, +: counter-clockwise
         self.steer_cmd.angular_velocity_limit = 2.0 # radians/second
+        
+        self.closest_person_depth
 
 
     def inspva_callback(self, inspva_msg):
@@ -187,6 +180,9 @@ class PurePursuit(object):
     def gnss_callback(self, msg):
         self.lat = round(msg.latitude, 6)
         self.lon = round(msg.longitude, 6)
+        
+    def detection_callback(self,msg):
+        self.closest_person_depth = msg.pose.position.z
         
     def path_callback(self, msg):
         # self.path_points_yaw = []
@@ -217,11 +213,10 @@ class PurePursuit(object):
     
     def stop_car(self):
         """Stop the car by applying brakes and disabling acceleration."""
-        self.brake_cmd.f64_cmd = 0.6  # Apply full brake
-        self.accel_cmd.f64_cmd = 0.0  # Disable acceleration
-        
+        self.brake_cmd.f64_cmd = 0.5  # Apply full brake
+        #self.accel_cmd.f64_cmd = 0.0  # Disable acceleration
         self.brake_pub.publish(self.brake_cmd)
-        self.accel_pub.publish(self.accel_cmd)
+        #self.accel_pub.publish(self.accel_cmd)
         rospy.loginfo("Car stopped.")
 
     def front2steer(self, f_angle):
@@ -318,6 +313,7 @@ class PurePursuit(object):
 
     def start_pp(self):
         
+        
         while not rospy.is_shutdown():
 
             if (self.gem_enable == False):
@@ -325,7 +321,6 @@ class PurePursuit(object):
                 if(self.pacmod_enable == True):
 
                     # ---------- enable PACMod ----------
-
                     # enable forward gear
                     self.gear_cmd.ui16_cmd = 3
 
@@ -355,7 +350,15 @@ class PurePursuit(object):
 
                     self.gem_enable = True
 
-
+            if self.closest_person_depth < 10:
+                self.stop_car()
+                rospy.loginfo("Human Detected Stopping Car")
+                continue
+            else:
+                self.brake_cmd.f64_cmd = 0.0  # Disable Break
+                self.brake_pub.publish(self.brake_cmd)
+                rospy.loginfo("Car Starting.")
+                        
             self.path_points_x = np.array(self.path_points_lon_x)
             self.path_points_y = np.array(self.path_points_lat_y)
 
@@ -374,27 +377,36 @@ class PurePursuit(object):
                     #self.stop_car()
                     #break  # Exit the loop to stop the controller
             
-            ### May allow vehicle to go backward if the waypoint is behind ###
-            # waypoint_vector = [self.path_points_x[self.goal] - curr_x, self.path_points_y[self.goal] - curr_y]
-            # vehicle_heading_vector = [np.cos(curr_yaw), np.sin(curr_yaw)]
-            # angle_to_waypoint = self.find_angle(vehicle_heading_vector, waypoint_vector)
-            # if abs(angle_to_waypoint) > np.pi / 2:
-            #     if self.gear_cmd.ui16_cmd != 1:
-            #         rospy.loginfo("Waypoint is behind. Stopping the car to switch to reverse gear.")
-            #         self.stop_car()
-            #         rospy.sleep(1)
-            #         rospy.loginfo("Waypoint is behind. Switching to reverse gear.")
-            #         self.gear_cmd.ui16_cmd = 1 # Reverse
-            #         self.gear_pub.publish(self.gear_cmd)
-            # else:
-            #     if self.gear_cmd.ui16_cmd != 3:
-            #         rospy.loginfo("Waypoint is ahead. Stopping the car to switch to forward gear.")
-            #         self.stop_car()
-            #         rospy.sleep(1)
-            #         rospy.loginfo("Waypoint is ahead. Switching to forward gear.")
-            #         self.gear_cmd.ui16_cmd = 3
-            #         self.gear_pub.publish(self.gear_cmd)
-            ### Needs testing ###
+            # Check if waypoint is behind the car
+            waypoint_vector = [self.path_points_x[self.goal] - curr_x, self.path_points_y[self.goal] - curr_y]
+            vehicle_heading_vector = [np.cos(curr_yaw), np.sin(curr_yaw)]
+            angle_to_waypoint = self.find_angle(vehicle_heading_vector, waypoint_vector)
+            
+            # If waypoint is behind the car (angle > 90 degrees)
+            if abs(angle_to_waypoint) > np.pi / 2:
+                if self.gear_cmd.ui16_cmd != 1:  # If not already in reverse
+                    rospy.loginfo("Waypoint is behind. Stopping the car to switch to reverse gear.")
+                    self.stop_car()
+                    rospy.sleep(2)
+                    self.brake_cmd.f64_cmd = 0.0  # Disable Break
+                    self.brake_pub.publish(self.brake_cmd)
+                    rospy.loginfo("Switching to reverse gear.")
+                    self.gear_cmd.ui16_cmd = 1  # Reverse gear
+                    self.gear_pub.publish(self.gear_cmd)
+                    # Adjust look-ahead distance for reverse
+                    self.look_ahead = 2.0  # Shorter look-ahead in reverse
+            else:
+                if self.gear_cmd.ui16_cmd != 3:  # If not already in forward
+                    rospy.loginfo("Waypoint is ahead. Stopping the car to switch to forward gear.")
+                    self.stop_car()
+                    rospy.sleep(2)
+                    self.brake_cmd.f64_cmd = 0.0  # Disable Break
+                    self.brake_pub.publish(self.brake_cmd)
+                    rospy.loginfo("Switching to forward gear.")
+                    self.gear_cmd.ui16_cmd = 3  # Forward gear
+                    self.gear_pub.publish(self.gear_cmd)
+                    # Reset look-ahead distance for forward
+                    self.look_ahead = 4.0  # Normal look-ahead in forward
             
             # finding the distance of each way point from the current position
             for i in range(len(self.path_points_x)):
@@ -414,11 +426,6 @@ class PurePursuit(object):
                     self.goal = idx
                     break
             print(self.goal)
-
-            # Log current position to CSV
-            log_time = time.time() - self.start_time
-            self.csv_writer.writerow(['actual', round(log_time, 2), curr_x, curr_y, curr_yaw, self.goal])
-
             self.goal_pub.publish(Int64(self.goal))
             # finding the distance between the goal point and the vehicle
             # true look-ahead distance between a waypoint and current position
@@ -464,13 +471,6 @@ class PurePursuit(object):
                 print("Steering wheel angle: " + str(steering_angle) + " degrees")
                 print("\n")
 
-            self.metrics_writer.writerow([
-                round(current_time, 2),
-                curr_x, curr_y, curr_yaw,
-                self.speed, round(filt_vel, 3),
-                ct_error, f_delta_deg, steering_angle, self.goal
-            ])
-
             current_time = rospy.get_time()
             filt_vel     = self.speed_filter.get_data(self.speed)
             output_accel = self.pid_speed.get_control(current_time, self.desired_speed - filt_vel)
@@ -502,15 +502,13 @@ class PurePursuit(object):
                 self.accel_pub.publish(self.accel_cmd)
             self.steer_pub.publish(self.steer_cmd)
             self.turn_pub.publish(self.turn_cmd)
-            plt.pause(0.001)
+
             self.rate.sleep()
 
     def __del__(self):
         """Cleanup when the object is destroyed"""
         plt.close('all')
         plt.ioff()  # Turn off interactive mode
-        self.csv_file.close()
-        self.metrics_file.close()
 
 
 def pure_pursuit():
