@@ -114,7 +114,7 @@ class PurePursuit(object):
         self.olon       = -88.2359994
 
         # read waypoints into the system 
-        self.goal_reached_threshold = 5 # meters
+        self.goal_reached_threshold = 4 # meters
         self.goal       = 0        
         self.goal_pub = rospy.Publisher('/current_goal_idx', Int64, queue_size=10) 
         #self.read_waypoints() 
@@ -166,7 +166,7 @@ class PurePursuit(object):
         self.steer_cmd.angular_position = 0.0 # radians, -: clockwise, +: counter-clockwise
         self.steer_cmd.angular_velocity_limit = 2.0 # radians/second
         
-        self.closest_person_depth
+        self.closest_person_depth = np.inf
 
 
     def inspva_callback(self, inspva_msg):
@@ -182,7 +182,10 @@ class PurePursuit(object):
         self.lon = round(msg.longitude, 6)
         
     def detection_callback(self,msg):
-        self.closest_person_depth = msg.pose.position.z
+        if msg.pose.position.z == -10.0:
+            self.closest_person_depth = np.inf
+        else:
+            self.closest_person_depth = msg.pose.position.z
         
     def path_callback(self, msg):
         # self.path_points_yaw = []
@@ -352,6 +355,7 @@ class PurePursuit(object):
 
             if self.closest_person_depth < 10:
                 self.stop_car()
+                rospy.sleep(3) # flickering detections
                 rospy.loginfo("Human Detected Stopping Car")
                 continue
             else:
@@ -378,38 +382,40 @@ class PurePursuit(object):
             angle_to_waypoint = self.find_angle(vehicle_heading_vector, waypoint_vector)
             
             # If waypoint is behind the car (angle > 90 degrees)
-            if abs(angle_to_waypoint) > np.pi / 2:
-                if self.gear_cmd.ui16_cmd != 1:  # If not already in reverse
-                    rospy.loginfo("Waypoint is behind. Stopping the car to switch to reverse gear.")
-                    self.stop_car()
-                    rospy.sleep(2)
-                    self.brake_cmd.f64_cmd = 0.0  # Disable Break
-                    self.brake_pub.publish(self.brake_cmd)
-                    rospy.loginfo("Switching to reverse gear.")
-                    self.gear_cmd.ui16_cmd = 1  # Reverse gear
-                    self.gear_pub.publish(self.gear_cmd)
-                    # Adjust look-ahead distance for reverse
-                    self.look_ahead = 2.0  # Shorter look-ahead in reverse
-            else:
-                if self.gear_cmd.ui16_cmd != 3:  # If not already in forward
-                    rospy.loginfo("Waypoint is ahead. Stopping the car to switch to forward gear.")
-                    self.stop_car()
-                    rospy.sleep(2)
-                    self.brake_cmd.f64_cmd = 0.0  # Disable Break
-                    self.brake_pub.publish(self.brake_cmd)
-                    rospy.loginfo("Switching to forward gear.")
-                    self.gear_cmd.ui16_cmd = 3  # Forward gear
-                    self.gear_pub.publish(self.gear_cmd)
-                    # Reset look-ahead distance for forward
-                    self.look_ahead = 4.0  # Normal look-ahead in forward
-            
+            # if abs(angle_to_waypoint) > np.pi / 2:
+            #     if self.gear_cmd.ui16_cmd != 1:  # If not already in reverse
+            #         rospy.loginfo("Waypoint is behind. Stopping the car to switch to reverse gear.")
+            #         self.stop_car()
+            #         rospy.sleep(2)
+            #         self.brake_cmd.f64_cmd = 0.0  # Disable Break
+            #         self.brake_pub.publish(self.brake_cmd)
+            #         rospy.loginfo("Switching to reverse gear.")
+            #         self.gear_cmd.ui16_cmd = 1  # Reverse gear
+            #         self.gear_pub.publish(self.gear_cmd)
+            #         # Adjust look-ahead distance for reverse
+            #         self.look_ahead = 2.0  # Shorter look-ahead in reverse
+            # else:
+            #     if self.gear_cmd.ui16_cmd != 3:  # If not already in forward
+            #         rospy.loginfo("Waypoint is ahead. Stopping the car to switch to forward gear.")
+            #         self.stop_car()
+            #         rospy.sleep(2)
+            #         self.brake_cmd.f64_cmd = 0.0  # Disable Break
+            #         self.brake_pub.publish(self.brake_cmd)
+            #         rospy.loginfo("Switching to forward gear.")
+            #         self.gear_cmd.ui16_cmd = 3  # Forward gear
+            #         self.gear_pub.publish(self.gear_cmd)
+            #         # Reset look-ahead distance for forward
+            #         self.look_ahead = 4.0  # Normal look-ahead in forward
+
+            print(f"goal :  {self.goal}")
+            print(f"lookahead : {self.look_ahead}")
             # finding the distance of each way point from the current position
             for i in range(len(self.path_points_x)):
                 self.dist_arr[i] = self.dist((self.path_points_x[i], self.path_points_y[i]), (curr_x, curr_y))
-
             # finding those points which are less than the look ahead distance (will be behind and ahead of the vehicle)
-            goal_arr = np.where( (self.dist_arr < self.look_ahead + 0.3) & (self.dist_arr > self.look_ahead - 0.3) )[0]
-            print(goal_arr)
+            # self.dist_arr = self.dist_arr[self.goal:]
+            goal_arr = np.where( (self.dist_arr < self.look_ahead + 0.3) & (self.dist_arr > self.look_ahead - 0.3))[0]
+            
             print(self.dist_arr)
             # finding the goal point which is the last in the set of points less than the lookahead distance
             for idx in goal_arr:
@@ -417,10 +423,16 @@ class PurePursuit(object):
                 v2 = [np.cos(curr_yaw), np.sin(curr_yaw)]
                 temp_angle = self.find_angle(v1,v2)
                 # find correct look-ahead point by using heading information
-                if abs(temp_angle) < np.pi/2:
-                    self.goal = idx
-                    break
+                if self.gear_cmd.ui16_cmd == 1:
+                    if abs(temp_angle) > np.pi/2:
+                        self.goal = idx
+                        break
+                else:
+                    if abs(temp_angle) < np.pi/2:
+                        self.goal = idx
+                        break
             print(self.goal)
+
             self.goal_pub.publish(Int64(self.goal))
             # finding the distance between the goal point and the vehicle
             # true look-ahead distance between a waypoint and current position
@@ -484,7 +496,10 @@ class PurePursuit(object):
                 self.turn_cmd.ui16_cmd = 0 # turn right
 
             self.accel_cmd.f64_cmd = output_accel
-            self.steer_cmd.angular_position = np.radians(steering_angle)
+            if self.gear_cmd.ui16_cmd == 1: # reverse angle needs reverse
+                self.steer_cmd.angular_position = -np.radians(steering_angle)
+            else:
+                self.steer_cmd.angular_position = np.radians(steering_angle)
             if distance_to_goal < self.goal_reached_threshold and len(self.path_points_heading) > 0:
                 print("Stopping the car as goal is reached")
                 self.brake_cmd.f64_cmd = 0.5  # Apply half brake

@@ -399,9 +399,10 @@ if __name__ == "__main__":
         parking_spots = [
             (-88.2353660,40.0928328, 90), # spot facing east
             (-88.235317,40.092751,141.43), # angle parking spot (not supported with walls)
-            (-88.235711,40.092788,180)  # Yellow main parking spot facing south  
+            (-88.235711,40.092788,180),  # Yellow main parking spot facing south   
+            (-88.2359994,40.0928563,270)
             ] 
-        hybrid.goal = parking_spots[1]
+        hybrid.goal = parking_spots[2]
         hybrid.start_hybrid()
     except rospy.ROSInterruptException:
         hybrid.cleanup_vehicle_tracking()

@@ -5,7 +5,7 @@ class Map:
         self.grid_bottom_right = (85, -20)
         self.lx = self.grid_bottom_right[0] - self.grid_top_left[0]  # 110m
         self.ly = self.grid_top_left[1] - self.grid_bottom_right[1]  # 30m
-        self.cell_size = max(0.25, self.lx / 200)
+        self.cell_size = max(1, self.lx / 200)
         self.cones = []  # list to store cone positions
         
     
@@ -30,7 +30,7 @@ class Map:
         #self.obs.append([spot[0]-2-0.25,spot[1]+4,3.5,0.1]) 
         
         
-        for i in range(1,7):
+        for i in range(1,2):
             self.obs.append([spot[0]+2-(3.5*i)-0.25,spot[1]-3,0.1,7]) # dummy spot
             self.obs.append([spot[0]-2-(3.5*i)+0.25,spot[1]-3,0.1,7])
             self.obs.append([spot[0]-2-(3.5*i)+0.25,spot[1]-3,3.5,0.1]) 

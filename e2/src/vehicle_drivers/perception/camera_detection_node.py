@@ -28,14 +28,22 @@ class YOLOv5Node:
         rospy.init_node('yolov5_detector', anonymous=True)
         
         # Subscribers and Publishers
+        # self.fl_image_sub = rospy.Subscriber("/camera_fl/arena_camera_node/image_raw", Image, self.fl_image_callback, queue_size=10)
+        # self.fr_image_sub = rospy.Subscriber("/camera_fr/arena_camera_node/image_raw", Image, self.fr_image_callback, queue_size=10)
+        # self.rear_image_sub = rospy.Subscriber("/mako_1/mako_1/image_raw", Image, self.rear_image_callback, queue_size=10)
         self.image_sub = rospy.Subscriber("/zed2/zed_node/left/image_rect_color",Image, self.image_callback, queue_size=10)
         self.depth_sub = rospy.Subscriber("/zed2/zed_node/depth/depth_registered", Image, self.depth_callback, queue_size=10)
         self.camera_info_sub = rospy.Subscriber("/zed2/zed_node/left/camera_info", CameraInfo, self.camera_info_callback, queue_size=10)
         self.camera_pose_sub = rospy.Subscriber("/zed2/zed_node/pose", PoseStamped, self.camera_pose_callback)
 
         self.annotated_pub = rospy.Publisher("/annotated_image", Image, queue_size=10)
+        self.fr_annotated_pub = rospy.Publisher("/fr_annotated_image", Image, queue_size=10)
+        self.fl_annotated_pub = rospy.Publisher("/fl_annotated_image", Image, queue_size=10)
+        self.rear_annotated_pub = rospy.Publisher("/rear_annotated_image", Image, queue_size=10)
         self.detections_pub = rospy.Publisher("/detections", String, queue_size=1)
-        self.world_coordinates_pub = rospy.Publisher("/cone_world_positions", PoseStamped, queue_size=10)
+        self.fr_detections_pub = rospy.Publisher("/fr_detections", String, queue_size=1)
+        self.fl_detections_pub = rospy.Publisher("/fl_detections", String, queue_size=1)
+        self.world_coordinates_pub = rospy.Publisher("/detection_world_positions", PoseStamped, queue_size=10)
 
 
         self.camera_matrix = None
@@ -49,7 +57,7 @@ class YOLOv5Node:
         # Load model
         import rospkg
         pkg_path = rospkg.RosPack().get_path('perception')
-        self.model_path = os.path.join(pkg_path, 'best.pt')
+        self.model_path = os.path.join(pkg_path, 'yolov5m.pt')
         rospy.loginfo(f"Loading YOLOv5 weights from {self.model_path}")
         self.model = torch.hub.load(
             'ultralytics/yolov5', 'custom',
@@ -158,11 +166,12 @@ class YOLOv5Node:
             # Convert image to OpenCV format
             frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
             frame = cv2.resize(frame, (640, 640))
+            frame = frame[0:641, 100:541] # crop: y same, x cropped by 100
             
             # Run inference
             results = self.model(frame)
+
             detections = results.pandas().xyxy[0].to_dict(orient='records')
-            
             if detections and hasattr(self, 'depth_frame'):
                 # rospy.loginfo(f'Detections: {detections}')
                 detection_msg = String()
@@ -172,8 +181,9 @@ class YOLOv5Node:
                 # self.detections_pub.publish(String(data=str(detections)))
                 
                 # Draw bounding boxes on frame
-                for det in detections:
-                    cone_positions = []
+                for i, det in enumerate(detections):
+                    if det['name'] != 'person':
+                        continue
                     xmin = int(det['xmin'])
                     ymin = int(det['ymin'])
                     xmax = int(det['xmax'])
@@ -190,29 +200,46 @@ class YOLOv5Node:
                         position_3d = None
                         if valid_depths.size > 0:
                             centroid_depth = np.median(valid_depths)  # Use median for robustness
+
+                            # x, y is just center of bounding box
                             cone_x = (xmin + xmax) // 2
                             cone_y = (ymin + ymax) // 2
-                            cone_positions.append((cone_x, cone_y, centroid_depth))
-                            rospy.loginfo(f"Cone detected with depth {centroid_depth:.2f}m")
+                            rospy.loginfo(f"person id: {i}, timestamp: {msg.header.stamp}")
+                            rospy.loginfo(f"person detected with depth {centroid_depth:.2f}m")
                             position_3d = self.get_3d_position(cone_x, cone_y, centroid_depth)
                         if position_3d:
+                            # """zed2 built in slam"""
+                            # # Get world transform
+                            # translation, rotation = self.get_world_transform_zed()
+                            # if translation and rotation:
+                            #     # Transform to world coordinates
+                            #     position_3d = np.array(position_3d)
+                            #     world_pos = rotation @ position_3d + translation
+                                
+                            #     # Publish world position
+                            #     self.publish_world_position(world_pos.tolist(), msg.header.stamp)
+                                
+                            #     wx, wy, wz = world_pos
+                            #     rospy.loginfo(f"Cone world position: X={wx:.2f}m, Y={wy:.2f}m, Z={wz:.2f}m")
+                            
+                            """zed2 diy depth"""
                             X, Y, Z = position_3d
-                            rospy.loginfo(f"Cone detected at X={X:.2f}m, Y={Y:.2f}m, Z={Z:.2f}m")
+                            
+                            rospy.loginfo(f"person camera position: X={X:.2f}m, Y={Y:.2f}m, Z={Z:.2f}m")
                             world_pos = self.camera_to_world([X, Y, Z])
                             if world_pos:
                                 wx, wy, wz = world_pos
-                                rospy.loginfo(f"Cone world position: X={wx:.2f}m, Y={wy:.2f}m, Z={wz:.2f}m")
+                                rospy.loginfo(f"person world position: X={wx:.2f}m, Y={wy:.2f}m, Z={wz:.2f}m")
                                 self.publish_world_position(world_pos, msg.header.stamp)
-                                
-                            # Calculate angle from camera center
-                            # angle = np.arctan2(X, Z)
-                            # rospy.loginfo(f"Cone angle from center: {np.degrees(angle):.2f} degrees")
 
                     label = f"{det['name']} {det['confidence']:.2f} {centroid_depth:.2f} {wx:.2f} {wy:.2f} {wz:.2f}"
                     cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (0, 255, 0), 2)
                     cv2.putText(frame, label, (xmin, ymin - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-            
+            elif len(detections) == 0:
+                """if no detections, publish impossible depth"""
+                # print("zero detections")
+                self.publish_world_position([0, 0, -10], msg.header.stamp) 
             # Convert annotated frame back to ROS image and publish
             annotated_img_msg = self.bridge.cv2_to_imgmsg(frame, encoding="bgr8")
             self.annotated_pub.publish(annotated_img_msg)
