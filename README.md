@@ -8,3 +8,7 @@ Hybrid a*
 rosrun hybrid_a_star_sim pure_pursuit.py
 Rosrun <package_name aka the dir> <py file>
 Catkin_make clean
+
+### Video Link:
+
+https://www.youtube.com/watch?v=dCdWSVQ1tms
