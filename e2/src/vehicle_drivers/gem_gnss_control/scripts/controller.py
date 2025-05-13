@@ -57,6 +57,8 @@ class PurePursuit(object):
             'steering_angle': []
         }
         self.start_time = time.time()
+
+        self.last_max_goal_idx = 0  # Avoid reusing past goals
         
         # Create figure and subplots
         self.fig, (self.ax1, self.ax2) = plt.subplots(2, 1, figsize=(10, 8))
@@ -82,6 +84,19 @@ class PurePursuit(object):
         self.ani = FuncAnimation(self.fig, self.update_plot, interval=100, blit=True)
         plt.ion()  # Enable interactive mode
         plt.show(block=False)
+
+        # Initialize CSV logging
+        self.csv_file = open('gem_position_log.csv', mode='w', newline='')
+        self.csv_writer = csv.writer(self.csv_file)
+        self.csv_writer.writerow(['Type', 'Time (s)', 'X (m)', 'Y (m)', 'Yaw (rad)'])  # CSV header
+
+        # Extra CSV for detailed metrics
+        self.metrics_file = open('controller_metrics_log.csv', mode='w', newline='')
+        self.metrics_writer = csv.writer(self.metrics_file)
+        self.metrics_writer.writerow([
+            'Time (s)', 'X', 'Y', 'Yaw (rad)', 'Speed (m/s)', 'Filtered Speed (m/s)',
+            'CT Error (m)', 'Steering Angle (deg)', 'Wheel Angle (deg)', 'Goal Index'
+        ])
 
         self.rate       = rospy.Rate(10)
 
@@ -368,6 +383,10 @@ class PurePursuit(object):
 
             curr_x, curr_y, curr_yaw = self.get_gem_state()
 
+            # Log current position to CSV
+            log_time = time.time() - self.start_time
+            self.csv_writer.writerow(["actual", round(log_time, 2), curr_x, curr_y, curr_yaw])
+
             self.dist_arr = np.zeros(len(self.path_points_x))
             
         
@@ -415,6 +434,12 @@ class PurePursuit(object):
             # finding those points which are less than the look ahead distance (will be behind and ahead of the vehicle)
             # self.dist_arr = self.dist_arr[self.goal:]
             goal_arr = np.where( (self.dist_arr < self.look_ahead + 0.3) & (self.dist_arr > self.look_ahead - 0.3))[0]
+
+            # goal_arr = np.where(
+            #     (self.dist_arr < self.look_ahead + 0.3) &
+            #     (self.dist_arr > self.look_ahead - 0.3) &
+            #     (np.arange(len(self.dist_arr)) >= self.last_max_goal_idx)
+            # )[0]
             
             print(self.dist_arr)
             # finding the goal point which is the last in the set of points less than the lookahead distance
@@ -426,10 +451,12 @@ class PurePursuit(object):
                 if self.gear_cmd.ui16_cmd == 1:
                     if abs(temp_angle) > np.pi/2:
                         self.goal = idx
+                        self.last_max_goal_idx = max(self.last_max_goal_idx, self.goal)
                         break
                 else:
                     if abs(temp_angle) < np.pi/2:
                         self.goal = idx
+                        self.last_max_goal_idx = max(self.last_max_goal_idx, self.goal)
                         break
             print(self.goal)
 
@@ -478,6 +505,14 @@ class PurePursuit(object):
                 print("Steering wheel angle: " + str(steering_angle) + " degrees")
                 print("\n")
 
+            # Log detailed metrics to separate CSV
+            self.metrics_writer.writerow([
+                round(current_time, 2),
+                curr_x, curr_y, curr_yaw,
+                self.speed, round(filt_vel, 3),
+                ct_error, f_delta_deg, steering_angle, self.goal
+            ])
+
             current_time = rospy.get_time()
             filt_vel     = self.speed_filter.get_data(self.speed)
             output_accel = self.pid_speed.get_control(current_time, self.desired_speed - filt_vel)
@@ -519,6 +554,8 @@ class PurePursuit(object):
         """Cleanup when the object is destroyed"""
         plt.close('all')
         plt.ioff()  # Turn off interactive mode
+        self.csv_file.close()  # Close the log file
+        self.metrics_file.close()
 
 
 def pure_pursuit():

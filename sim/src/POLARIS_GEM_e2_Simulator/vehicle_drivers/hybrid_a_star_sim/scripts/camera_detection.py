@@ -47,8 +47,8 @@ class YOLOv5Node:
         self.fl_image_sub = rospy.Subscriber("/camera_fl/arena_camera_node/image_raw", Image, self.fl_image_callback, queue_size=10)
         self.fr_image_sub = rospy.Subscriber("/camera_fr/arena_camera_node/image_raw", Image, self.fr_image_callback, queue_size=10)
         self.rear_image_sub = rospy.Subscriber("/mako_1/mako_1/image_raw", Image, self.rear_image_callback, queue_size=10)
-        # self.image_sub = rospy.Subscriber("/zed2/zed_node/left/image_rect_color",Image, self.image_callback, queue_size=10)
-        self.image_sub = rospy.Subscriber("/oak/right/image_raw",Image, self.image_callback, queue_size=10)
+        # self.image_sub = rospy.Subscriber("/oak/right/image_raw",Image, self.image_callback, queue_size=10)
+        self.image_sub = rospy.Subscriber("/zed2/zed_node/left/image_rect_color",Image, self.image_callback, queue_size=10)
         self.depth_sub = rospy.Subscriber("/zed2/zed_node/depth/depth_registered", Image, self.depth_callback, queue_size=10)
         self.camera_info_sub = rospy.Subscriber("/zed2/zed_node/left/camera_info", CameraInfo, self.camera_info_callback, queue_size=10)
         self.camera_pose_sub = rospy.Subscriber("/zed2/zed_node/pose", PoseStamped, self.camera_pose_callback)
@@ -72,9 +72,9 @@ class YOLOv5Node:
         self.bridge = CvBridge()
         
         # Load model
-        # self.model_path = '/home/wy16/Desktop/Autonomous-Parking/sim/src/POLARIS_GEM_e2_Simulator/vehicle_drivers/hybrid_a_star_sim/scripts/best.pt'
-        # self.model = torch.hub.load('ultralytics/yolov5', 'custom', path=self.model_path, force_reload=True)
-        self.model = torch.hub.load("ultralytics/yolov5", "yolov5m") # pretrained coco
+        self.model_path = '/home/wy16/Desktop/Autonomous-Parking/sim/src/POLARIS_GEM_e2_Simulator/vehicle_drivers/hybrid_a_star_sim/scripts/best.pt'
+        self.model = torch.hub.load('ultralytics/yolov5', 'custom', path=self.model_path, force_reload=True)
+        # self.model = torch.hub.load("ultralytics/yolov5", "yolov5m") # pretrained coco
         self.model.conf = 0.7
 
         rospy.loginfo("Model loaded OK")
@@ -344,7 +344,7 @@ class YOLOv5Node:
             results = self.model(frame)
 
             detections = results.pandas().xyxy[0].to_dict(orient='records')
-            if detections: # and hasattr(self, 'depth_frame')
+            if detections and hasattr(self, 'depth_frame'):
                 # rospy.loginfo(f'Detections: {detections}')
                 detection_msg = String()
                 detection_msg.data = str(detections)
@@ -354,8 +354,8 @@ class YOLOv5Node:
                 
                 # Draw bounding boxes on frame
                 for i, det in enumerate(detections):
-                    if det['name'] != 'person':
-                        continue
+                    # if det['name'] != 'person':
+                    #     continue
                     xmin = int(det['xmin'])
                     ymin = int(det['ymin'])
                     xmax = int(det['xmax'])
@@ -376,8 +376,8 @@ class YOLOv5Node:
                             # x, y is just center of bounding box
                             cone_x = (xmin + xmax) // 2
                             cone_y = (ymin + ymax) // 2
-                            rospy.loginfo(f"person id: {i}, timestamp: {msg.header.stamp}")
-                            rospy.loginfo(f"person detected with depth {centroid_depth:.2f}m")
+                            rospy.loginfo(f"cone id: {i}, timestamp: {msg.header.stamp}")
+                            rospy.loginfo(f"cone detected with depth {centroid_depth:.2f}m")
                             position_3d = self.get_3d_position(cone_x, cone_y, centroid_depth)
                         if position_3d:
                             # """zed2 built in slam"""
@@ -397,11 +397,11 @@ class YOLOv5Node:
                             """zed2 diy depth"""
                             X, Y, Z = position_3d
                             
-                            rospy.loginfo(f"person camera position: X={X:.2f}m, Y={Y:.2f}m, Z={Z:.2f}m")
+                            rospy.loginfo(f"cone camera position: X={X:.2f}m, Y={Y:.2f}m, Z={Z:.2f}m")
                             world_pos = self.camera_to_world([X, Y, Z])
                             if world_pos:
                                 wx, wy, wz = world_pos
-                                rospy.loginfo(f"person world position: X={wx:.2f}m, Y={wy:.2f}m, Z={wz:.2f}m")
+                                # rospy.loginfo(f"person world position: X={wx:.2f}m, Y={wy:.2f}m, Z={wz:.2f}m")
                                 self.publish_world_position(world_pos, msg.header.stamp)
 
                     label = f"{det['name']} {det['confidence']:.2f} {centroid_depth:.2f} {wx:.2f} {wy:.2f} {wz:.2f}"
