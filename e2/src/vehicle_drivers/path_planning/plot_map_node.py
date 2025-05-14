@@ -2,6 +2,8 @@
 
 import rospy
 import numpy as np
+import open3d as o3d
+import time
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from matplotlib.collections import PatchCollection
@@ -9,9 +11,11 @@ import matplotlib.animation as animation
 from threading import Lock
 
 from sensor_msgs.msg import NavSatFix, PointCloud2
+from visualization_msgs.msg import Marker, MarkerArray
 import sensor_msgs.point_cloud2 as pc2
 from septentrio_gnss_driver.msg import INSNavGeod
 from nav_msgs.msg import Path
+from tf.transformations import euler_from_quaternion, quaternion_from_euler
 from geometry_msgs.msg import PoseStamped
 
 import sys
@@ -34,6 +38,8 @@ class MapPlotter:
         self.map = Map()
         self.map.add_walls()
         self.env = Environment(self.map.obs, lx=self.map.lx, ly=self.map.ly)
+        self.map.static_obs = len(self.map.obs)
+        print(f"static_obs: {self.map.static_obs}")
         
         # Vehicle state
         self.lat = None
@@ -59,6 +65,12 @@ class MapPlotter:
         # Subscribers & Publishers
         self.sub = rospy.Subscriber('/ouster/points', PointCloud2, self.lidar_callback, queue_size=1)
 
+        self.filtered_cloud_pub = rospy.Publisher('/filtered_points', PointCloud2, queue_size=1)
+        self.filtered_intense_cloud_pub = rospy.Publisher('/filtered_intense_points', PointCloud2, queue_size=1)
+        self.pub_markers = rospy.Publisher('/cone_world_positions', PoseStamped, queue_size=10)
+        self.marker_pub = rospy.Publisher('/lidar_obstacles', MarkerArray, queue_size=1)
+        self.cone_pub = rospy.Publisher("/cone_xy", PoseStamped, queue_size=1)
+
         
         # Setup plot
         self.setup_plot()
@@ -70,7 +82,7 @@ class MapPlotter:
         )
         plt.show()
         
-    def filter_points(self, points_array, max_range=10.0, min_height=-1.5, max_height=-0.5):
+    def filter_points(self, points_array, max_range=15.0, min_height=-1.5, max_height=-0.5):
         """Filter points based on range and height"""
         # Calculate distances from origin
         distances = np.sqrt(points_array[:,0]**2 + points_array[:,1]**2)
@@ -83,56 +95,134 @@ class MapPlotter:
         return points_array[mask]
 
     def lidar_callback(self, msg: PointCloud2):
+        callback_start_time = time.time()
         # get state
         x, y, yaw = self.get_vehicle_state()
+        get_vehicle_state_time = time.time() - callback_start_time
+        # rospy.loginfo(f"get_vehicle_state started at {callback_start_time}s, took {get_vehicle_state_time:.4f}s")
 
+        read_points_start_time = time.time()
         # 2) Convert to numpy Nx3
         pts = np.array([[p[0],p[1],p[2],p[3]] for p in pc2.read_points(msg, skip_nans=True)])
         if pts.shape[0] < 50:
             return
+        read_points_time = time.time() - read_points_start_time
+        # rospy.loginfo(f"read_points started at {read_points_start_time}s, took {read_points_time:.4f}s")
         
-        # just_filtered_pts = self.filter_points(pts)
-        # filtered_cloud = pc2.create_cloud_xyz32(
-        #     header=msg.header,
-        #     points=just_filtered_pts[:, :3]  # Only use x,y,z coordinates
-        # )
-        # self.filtered_cloud_pub.publish(filtered_cloud)
         
-        """
-        filter points based on range and height
-        then just pick the first one (not even closest just first) and add it as a cone to the map
-        """
+        just_filtered_pts = self.filter_points(pts)
+        filtered_cloud = pc2.create_cloud_xyz32(
+            header=msg.header,
+            points=just_filtered_pts[:, :3]  # Only use x,y,z coordinates
+        )
+        self.filtered_cloud_pub.publish(filtered_cloud)
         
-
+        # print("points.shape: ", pts.shape)
+        # print("4th col max min mean: ", np.max(pts[:,3]), np.min(pts[:,3]), np.mean(pts[:,3]))
+        filter_points_start_time = time.time()
         high_intensity_pts = pts[pts[:,3] > 5000.0] # only strong reflections
+        
 
         # filter points
         high_intensity_pts = self.filter_points(high_intensity_pts)
+        filter_points_time = time.time() - filter_points_start_time
+        rospy.loginfo(f"filter_points started at {filter_points_start_time}s, took {filter_points_time:.4f}s")
+        print("high_intensity points shape: ", high_intensity_pts.shape)
 
-        if len(high_intensity_pts) > 0: # if empty do nothing
+        filtered_intense_cloud = pc2.create_cloud_xyz32(
+            header=msg.header,
+            points=high_intensity_pts[:, :3]  # Only use x,y,z coordinates
+        )
+        
+        # Publish filtered cloud
+        self.filtered_intense_cloud_pub.publish(filtered_intense_cloud)
 
-            first_pt = high_intensity_pts[0]
+        # 3) Make Open3D pointcloud
 
-            cone_x, cone_y = first_pt[0] + x, first_pt[1] + y
+        pts = high_intensity_pts[:,:3] # xyz no intensity
+        if len(high_intensity_pts) == 0:
+            return
+        
+        dbscan_start_time = time.time()
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pts)
+        labels = np.array(pcd.cluster_dbscan(eps=0.3, min_points=3, print_progress=False))
+        dbscan_end_time = time.time() - dbscan_start_time
+        # rospy.loginfo(f"dbscan started at {dbscan_start_time}s, took {dbscan_end_time:.4f}s")
+        # print("labels: ", labels)
+        unique_labels = set(labels) - {-1}
+        print("num unique labels: ", len(unique_labels))
+
+        marker_array = MarkerArray()
+        marker_id = 0
+        # 8) Publish centroids if there are any
+        for k in unique_labels:
+            class_member_mask = (labels == k)
+            cluster = np.asarray(pcd.points)[class_member_mask]
+
+            # if len(cluster) < 3:
+            #     # skip small clusters
+            #     continue 
+
+            # get centroid
+            centroid = np.mean(cluster, axis=0)
+            
+            # Create a marker for this obstacle
+            marker = Marker()
+            marker.header = msg.header
+            marker.ns = "obstacles"
+            marker.id = marker_id
+            marker.type = Marker.SPHERE
+            marker.action = Marker.ADD
+            marker.pose.position.x = centroid[0]
+            marker.pose.position.y = centroid[1]
+            marker.pose.position.z = centroid[2]
+            marker.pose.orientation.w = 1.0
+
+            # cluster dims for our markers
+            cluster_std = np.std(cluster, axis=0)
+            marker.scale.x = 0.5
+            marker.scale.y = 0.5
+            marker.scale.z = 0.5
+
+            marker.color.a = 0.7
+            marker.color.r = 1.0
+            marker.color.g = 0.0
+            marker.color.b = 0.0
+
+            marker_array.markers.append(marker)
+            marker_id += 1
+            # Rotation matrix for vehicle heading
+            cos_yaw = np.cos(yaw)
+            sin_yaw = np.sin(yaw)
+            
+            # Transform centroid from LiDAR frame to global frame
+            global_x = x + (centroid[0] * cos_yaw - centroid[1] * sin_yaw)
+            global_y = y + (centroid[0] * sin_yaw + centroid[1] * cos_yaw)
+            rospy.loginfo(f"Centroid: {centroid[0], centroid[1]}, xy: {x, y}, global: {global_x, global_y} Marker ID: {marker_id}, timestamp: {msg.header.stamp}")
+        
+
+            cone_x, cone_y = global_x, global_y
 
             # print("successfully added cone_x, cone_y: ", cone_x, cone_y)
-            # cone_x, cone_y:  64.24394957565457 15.873146025927554
+            # just clear cones beforehand 
+            # self.map.clear_cones()
 
-            if self.map.add_cone(cone_x, cone_y):
-                
+            add_cone = self.map.add_cone(cone_x, cone_y)
+
+            print(add_cone)
+            if add_cone:
+                pose = PoseStamped()
+                pose.header.frame_id = "map"
+                pose.pose.position.x = cone_x
+                pose.pose.position.y = cone_y
+                pose.pose.position.z = 0 # dm
+                pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w  = quaternion_from_euler(0.0, 0.0, 0)
+                self.cone_pub.publish(pose)
                 self.update_obstacles()
 
-        # print("first high intensity point: ", high_intensity_pts[0])
-
-        # could go by min distance too
-
-        # filtered_intense_cloud = pc2.create_cloud_xyz32(
-        #     header=msg.header,
-        #     points=high_intensity_pts[:, :3]  # Only use x,y,z coordinates
-        # )
-        
-        # # Publish filtered cloud
-        # self.filtered_intense_cloud_pub.publish(filtered_intense_cloud)
+        # vizualization: obstacle markers
+        self.marker_pub.publish(marker_array)
 
     def setup_plot(self):
         """Initialize the plot with map and static elements"""
@@ -246,6 +336,8 @@ class MapPlotter:
             
             # Convert heading to yaw
             yaw = self.heading_to_yaw(self.heading)
+            # rospy.loginfo(f"heading degrees {self.heading}, yaw {yaw}") # should go negative right
+
             
             # Shift coordinates relative to map origin
             x_shifted = local_x - self.map.grid_top_left[0]
@@ -255,6 +347,7 @@ class MapPlotter:
         
     def update_obstacles(self):
         """Update obstacle visualization"""
+        rospy.loginfo("Updating obstacles...")  
         # Remove old obstacle patches
         # for patch in self.obstacle_patches:
         #     patch.remove()
@@ -268,35 +361,96 @@ class MapPlotter:
         #     rect = Rectangle((ob[0], ob[1]), ob[2], ob[3], fc='gray', ec='k')
         #     self.ax.add_patch(rect)
         #     self.obstacle_patches.append(rect)
-    
+        # Force redraw
+        self.fig.canvas.draw_idle() # either cones or map, choose one
+        # self.fig.canvas.flush_events()
     def update_plot(self, frame):
-        """Update the plot with current vehicle position and path"""
-        # Get current vehicle state
-        x, y, yaw = self.get_vehicle_state()
-        
-        if x is not None:
-            # Update vehicle position
-            self.vehicle_marker.set_data([x], [y])
+        try:
+            # Get current vehicle state
+            x, y, yaw = self.get_vehicle_state()
             
-            # Update heading line
-            heading_length = 2.0  # meters
-            self.heading_line.set_data(
-                [x, x + heading_length * np.cos(yaw)],
-                [y, y + heading_length * np.sin(yaw)]
-            )
+            # Clear existing patches (obstacles)
+            for patch in self.ax.patches:
+                patch.remove()
+                
+            # Add static obstacles (borders and parking lines)
+            static_obs = self.map.obs[:self.map.static_obs]  # First 4 are static borders
+            for ob in static_obs:
+                patch = Rectangle((ob[0], ob[1]), ob[2], ob[3], 
+                                fc='gray', ec='k', alpha=0.7)
+                self.ax.add_patch(patch)
+                
+            # Add parking lines
+            # parking_obs = (self.map.obs[self.map.static_obs:-len(self.map.cones)] 
+            #             if self.map.cones else self.map.obs[4:])
+            # for ob in parking_obs:
+            #     patch = Rectangle((ob[0], ob[1]), ob[2], ob[3], 
+            #                     fc='gray', ec='k', alpha=0.7)
+            #     self.ax.add_patch(patch)
+                
+            # Add detected cones
+            for cone in self.map.cones:
+                patch = Rectangle((cone[0], cone[1]), 0.5, 0.5, 
+                                fc='red', ec='darkred', alpha=0.7)
+                self.ax.add_patch(patch)
+
+            if x is not None:
+                # Update vehicle position marker
+                self.vehicle_marker.set_data([x], [y])
+                
+                # Update heading line
+                heading_length = 2.0
+                self.heading_line.set_data(
+                    [x, x + heading_length * np.cos(yaw)],
+                    [y, y + heading_length * np.sin(yaw)]
+                )
+                
+                # Update car model
+                if self.car_model is not None:
+                    self.car_model.remove()
+                self.car_model = self.create_car_model(x, y, yaw)
+                self.ax.add_collection(self.car_model)
             
-            # Update car model
-            if self.car_model is not None:
-                self.car_model.remove()
-            self.car_model = self.create_car_model(x, y, yaw)
-            self.ax.add_collection(self.car_model)
+            # Update path
+            with self.path_lock:
+                if self.path_points_x:
+                    self.path_line.set_data(self.path_points_x, self.path_points_y)
+            
+            # Return all artists that need to be redrawn
+            return [self.vehicle_marker, self.heading_line, 
+                    self.path_line, self.car_model]
+            
+        except Exception as e:
+            rospy.logerr(f"Error in update_plot: {e}")
+            return []
+    # def update_plot(self, frame):
+    #     """Update the plot with current vehicle position and path"""
+    #     # Get current vehicle state
+    #     x, y, yaw = self.get_vehicle_state()
         
-        # Update path
-        with self.path_lock:
-            if self.path_points_x:
-                self.path_line.set_data(self.path_points_x, self.path_points_y)
+    #     if x is not None:
+    #         # Update vehicle position
+    #         self.vehicle_marker.set_data([x], [y])
+            
+    #         # Update heading line
+    #         heading_length = 2.0  # meters
+    #         self.heading_line.set_data(
+    #             [x, x + heading_length * np.cos(yaw)],
+    #             [y, y + heading_length * np.sin(yaw)]
+    #         )
+            
+    #         # Update car model
+    #         if self.car_model is not None:
+    #             self.car_model.remove()
+    #         self.car_model = self.create_car_model(x, y, yaw)
+    #         self.ax.add_collection(self.car_model)
         
-        return self.vehicle_marker, self.heading_line, self.path_line, self.car_model
+    #     # Update path
+    #     with self.path_lock:
+    #         if self.path_points_x:
+    #             self.path_line.set_data(self.path_points_x, self.path_points_y)
+        
+    #     return self.vehicle_marker, self.heading_line, self.path_line, self.car_model
 
 def main():
     try:

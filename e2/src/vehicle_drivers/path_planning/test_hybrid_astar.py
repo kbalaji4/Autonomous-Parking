@@ -508,10 +508,10 @@ def gotogoal(goal_pos):
 
 if __name__ == '__main__':
     main()
-    # goal_pos_arr = [[49.5948455962297, 12.416345388704688,4.71238898038469],[49.5948455962297+3.5, 12.416345388704688, 4.71238898038469]]
-    # for goal_pos in goal_pos_arr:
-    #     try:
-    #         gotogoal(goal_pos)
-    #     except Exception as e:
-    #         print(f"Obstacle detected at {goal_pos} going to next goal")
-    #         continue
+    goal_pos_arr = [[49.5948455962297, 12.416345388704688,4.71238898038469],[49.5948455962297+3.5, 12.416345388704688, 4.71238898038469]]
+    for goal_pos in goal_pos_arr:
+        try:
+            gotogoal(goal_pos)
+        except Exception as e:
+            print(f"Obstacle detected at {goal_pos} going to next goal")
+            continue

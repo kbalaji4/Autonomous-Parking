@@ -5,8 +5,9 @@ class Map:
         self.grid_bottom_right = (85, -20)
         self.lx = self.grid_bottom_right[0] - self.grid_top_left[0]  # 110m
         self.ly = self.grid_top_left[1] - self.grid_bottom_right[1]  # 30m
-        self.cell_size = max(1, self.lx / 200)
+        self.cell_size = max(0.25, self.lx / 200)
         self.cones = []  # list to store cone positions
+        self.static_obs = 0 # num static, includes walls and spaces
         
     
     def add_walls(self):
@@ -27,7 +28,7 @@ class Map:
         self.obs.append([spot[0]+2-0.25,spot[1]-3,0.1,7]) # real spot
         self.obs.append([spot[0]-2+0.25,spot[1]-3,0.1,7])
         self.obs.append([spot[0]-2+0.25,spot[1]-3,3.5,0.1]) 
-        #self.obs.append([spot[0]-2-0.25,spot[1]+4,3.5,0.1]) 
+        # self.obs.append([spot[0]-2-0.25,spot[1]+4,3.5,0.1]) 
         
         
         for i in range(1,2):
@@ -42,7 +43,7 @@ class Map:
         """Add a cone as a 0.5x0.5m obstacle at the specified position"""
         # Check if there's already a cone nearby
         for cone in self.cones:
-            if ((cone[0] - x) ** 2 + (cone[1] - y) ** 2) ** 0.5 < 0.5:
+            if ((cone[0] - x) ** 2 + (cone[1] - y) ** 2) ** 0.5 < 5.0:
                 return False  # Cone already exists nearby
         
         # Add new cone
@@ -51,9 +52,16 @@ class Map:
         self.obs.append((x, y, 0.5, 0.5))  # Center the 0.5x0.5m obstacle at (x,y)
         print(len(self.obs))
         return True
+    # cones:  1 [(28.36925555748446, 26.37729597412349)]
+    # cones:  1 [(28.369506773632057, 26.374640195396122)]
 
     def clear_cones(self):
         """Remove all cones from the map"""
         # Remove cone obstacles from obs list
-        self.obs = [ob for ob in self.obs if ob not in [(x - 0.25, y - 0.25, 0.5, 0.5) for x, y in self.cones]]
+        oldlen = len(self.obs)
+        # print("obs: ", len(self.obs))
+        # print("cones: ", len(self.cones))
+        self.obs = [ob for ob in self.obs if ob not in [(x, y, 0.5, 0.5) for x, y in self.cones]]
+        newlen = len(self.obs)
+        # print(f"cleared {oldlen-newlen} cones")
         self.cones = [] 

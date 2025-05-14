@@ -90,6 +90,10 @@ class PurePursuit(object):
         self.csv_writer = csv.writer(self.csv_file)
         self.csv_writer.writerow(['Type', 'Time (s)', 'X (m)', 'Y (m)', 'Yaw (rad)'])  # CSV header
 
+        self.csv_file1 = open('planner_path_data_latest.csv', mode='w', newline='')
+        self.csv_writer1 = csv.writer(self.csv_file)
+        self.csv_writer1.writerow(['X (m)', 'Y (m)', 'Yaw (rad)'])  # CSV header
+
         # Extra CSV for detailed metrics
         self.metrics_file = open('controller_metrics_log.csv', mode='w', newline='')
         self.metrics_writer = csv.writer(self.metrics_file)
@@ -129,7 +133,7 @@ class PurePursuit(object):
         self.olon       = -88.2359994
 
         # read waypoints into the system 
-        self.goal_reached_threshold = 5 # meters
+        self.goal_reached_threshold = 4 # meters
         self.goal       = 0        
         self.goal_pub = rospy.Publisher('/current_goal_idx', Int64, queue_size=10) 
         #self.read_waypoints() 
@@ -213,6 +217,7 @@ class PurePursuit(object):
             self.path_points_lon_x.append(x)
             self.path_points_lat_y.append(y)
             self.path_points_heading.append(yaw) 
+            self.csv_writer1.writerow([x, y, yaw])
             i += 1
 
 
@@ -385,7 +390,7 @@ class PurePursuit(object):
 
             # Log current position to CSV
             log_time = time.time() - self.start_time
-            self.csv_writer.writerow(["actual", round(log_time, 2), curr_x, curr_y, curr_yaw])
+            self.csv_writer.writerow(["actual", round(log_time, 2), curr_x, curr_y, np.degrees(curr_yaw)])
 
             self.dist_arr = np.zeros(len(self.path_points_x))
             
@@ -405,7 +410,8 @@ class PurePursuit(object):
             #     if self.gear_cmd.ui16_cmd != 1:  # If not already in reverse
             #         rospy.loginfo("Waypoint is behind. Stopping the car to switch to reverse gear.")
             #         self.stop_car()
-            #         rospy.sleep(2)
+
+            #         rospy.sleep(4)
             #         self.brake_cmd.f64_cmd = 0.0  # Disable Break
             #         self.brake_pub.publish(self.brake_cmd)
             #         rospy.loginfo("Switching to reverse gear.")
@@ -416,8 +422,16 @@ class PurePursuit(object):
             # else:
             #     if self.gear_cmd.ui16_cmd != 3:  # If not already in forward
             #         rospy.loginfo("Waypoint is ahead. Stopping the car to switch to forward gear.")
-            #         self.stop_car()
-            #         rospy.sleep(2)
+            #         self.brake_cmd.f64_cmd = 0.2  # Apply full brake
+            #         #self.accel_cmd.f64_cmd = 0.0  # Disable acceleration
+            #         self.brake_pub.publish(self.brake_cmd)
+            #         #self.accel_pub.publish(self.accel_cmd)
+            #         # self.stop_car()
+            #         rospy.loginfo("Car stopped.")
+            #         self.steer_cmd.angular_position = 0.0
+
+            #         self.steer_pub.publish(self.steer_cmd)
+            #         rospy.sleep(4)
             #         self.brake_cmd.f64_cmd = 0.0  # Disable Break
             #         self.brake_pub.publish(self.brake_cmd)
             #         rospy.loginfo("Switching to forward gear.")
@@ -448,16 +462,16 @@ class PurePursuit(object):
                 v2 = [np.cos(curr_yaw), np.sin(curr_yaw)]
                 temp_angle = self.find_angle(v1,v2)
                 # find correct look-ahead point by using heading information
-                if self.gear_cmd.ui16_cmd == 1:
-                    if abs(temp_angle) > np.pi/2:
-                        self.goal = idx
-                        self.last_max_goal_idx = max(self.last_max_goal_idx, self.goal)
-                        break
-                else:
-                    if abs(temp_angle) < np.pi/2:
-                        self.goal = idx
-                        self.last_max_goal_idx = max(self.last_max_goal_idx, self.goal)
-                        break
+                # if self.gear_cmd.ui16_cmd == 1:
+                #     if abs(temp_angle) > np.pi/2:
+                #         self.goal = idx
+                        # self.last_max_goal_idx = max(self.last_max_goal_idx, self.goal)
+                        # break
+                # else:
+                if abs(temp_angle) < np.pi/2:
+                    self.goal = idx
+                    # self.last_max_goal_idx = max(self.last_max_goal_idx, self.goal)
+                    break
             print(self.goal)
 
             self.goal_pub.publish(Int64(self.goal))
@@ -505,6 +519,11 @@ class PurePursuit(object):
                 print("Steering wheel angle: " + str(steering_angle) + " degrees")
                 print("\n")
 
+            
+
+            current_time = rospy.get_time()
+            filt_vel     = self.speed_filter.get_data(self.speed)
+            output_accel = self.pid_speed.get_control(current_time, self.desired_speed - filt_vel)
             # Log detailed metrics to separate CSV
             self.metrics_writer.writerow([
                 round(current_time, 2),
@@ -512,11 +531,6 @@ class PurePursuit(object):
                 self.speed,
                 ct_error, f_delta_deg, steering_angle, self.goal
             ])
-
-            current_time = rospy.get_time()
-            filt_vel     = self.speed_filter.get_data(self.speed)
-            output_accel = self.pid_speed.get_control(current_time, self.desired_speed - filt_vel)
-
             if output_accel > self.max_accel:
                 output_accel = self.max_accel
 
@@ -531,16 +545,17 @@ class PurePursuit(object):
                 self.turn_cmd.ui16_cmd = 0 # turn right
 
             self.accel_cmd.f64_cmd = output_accel
-            if self.gear_cmd.ui16_cmd == 1: # reverse angle needs reverse
-                self.steer_cmd.angular_position = -np.radians(steering_angle)
-            else:
-                self.steer_cmd.angular_position = np.radians(steering_angle)
+            # if self.gear_cmd.ui16_cmd == 1: # reverse angle needs reverse
+            #     self.steer_cmd.angular_position = -np.radians(steering_angle)
+            # else:
+            self.steer_cmd.angular_position = np.radians(steering_angle)
             if distance_to_goal < self.goal_reached_threshold and len(self.path_points_heading) > 0:
                 print("Stopping the car as goal is reached")
                 self.brake_cmd.f64_cmd = 0.5  # Apply half brake
                 #self.accel_cmd.f64_cmd = 0.0  # Disable acceleration
                 self.brake_pub.publish(self.brake_cmd)
-                if np.abs(self.heading - self.path_points_heading[-1]) < 3:
+                if np.abs(self.heading - self.path_points_heading[-1]) < 1:
+                    print("aligned with goal breaking")
                     break
                 #self.accel_pub.publish(self.accel_cmd)
             else:
