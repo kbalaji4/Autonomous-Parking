@@ -74,7 +74,7 @@ class Astar:
         return list(reversed(route))
     
     def search_path(self, goal):
-        """ Search the path by astar. """
+        """ Search the path by astar with time limit. """
 
         goal = self.grid.to_cell_id(goal)
 
@@ -87,8 +87,19 @@ class Astar:
 
         closed_ = []
         open_ = [root]
+        
+        start_time = time()
+        best_cost = float('inf')
+        best_node = None
 
         while open_:
+            # Check time limit
+            if time() - start_time > 1.0:  # 1 second time limit
+                if best_node:
+                    self.table.append(Params(goal, best_cost))
+                    return best_cost
+                else:
+                    return None
 
             best = min(open_, key=lambda x: x.f)
 
@@ -96,9 +107,13 @@ class Astar:
             closed_.append(best)
 
             if best.cell_id == goal:
-                # route = self.backtracking(best)
                 self.table.append(Params(goal, best.g))
                 return best.g
+
+            # Update best partial path
+            if best.g < best_cost:
+                best_cost = best.g
+                best_node = best
 
             nbs = self.grid.get_neighbors(best.cell_id)
 

@@ -86,9 +86,13 @@ class PurePursuit(object):
         plt.show(block=False)
 
         # Initialize CSV logging
-        self.csv_file = open('gem_position_log.csv', mode='w', newline='')
+        self.csv_file = open('vehicle_trajectory_latest.csv', mode='w', newline='')
         self.csv_writer = csv.writer(self.csv_file)
         self.csv_writer.writerow(['Type', 'Time (s)', 'X (m)', 'Y (m)', 'Yaw (rad)'])  # CSV header
+
+        self.csv_file1 = open('planner_path_data_latest.csv', mode='w', newline='')
+        self.csv_writer1 = csv.writer(self.csv_file)
+        self.csv_writer1.writerow(['X (m)', 'Y (m)', 'Yaw (rad)'])  # CSV header
 
         # Extra CSV for detailed metrics
         self.metrics_file = open('controller_metrics_log.csv', mode='w', newline='')
@@ -401,30 +405,39 @@ class PurePursuit(object):
             angle_to_waypoint = self.find_angle(vehicle_heading_vector, waypoint_vector)
             
             # If waypoint is behind the car (angle > 90 degrees)
-            # if abs(angle_to_waypoint) > np.pi / 2:
-            #     if self.gear_cmd.ui16_cmd != 1:  # If not already in reverse
-            #         rospy.loginfo("Waypoint is behind. Stopping the car to switch to reverse gear.")
-            #         self.stop_car()
-            #         rospy.sleep(2)
-            #         self.brake_cmd.f64_cmd = 0.0  # Disable Break
-            #         self.brake_pub.publish(self.brake_cmd)
-            #         rospy.loginfo("Switching to reverse gear.")
-            #         self.gear_cmd.ui16_cmd = 1  # Reverse gear
-            #         self.gear_pub.publish(self.gear_cmd)
-            #         # Adjust look-ahead distance for reverse
-            #         self.look_ahead = 2.0  # Shorter look-ahead in reverse
-            # else:
-            #     if self.gear_cmd.ui16_cmd != 3:  # If not already in forward
-            #         rospy.loginfo("Waypoint is ahead. Stopping the car to switch to forward gear.")
-            #         self.stop_car()
-            #         rospy.sleep(2)
-            #         self.brake_cmd.f64_cmd = 0.0  # Disable Break
-            #         self.brake_pub.publish(self.brake_cmd)
-            #         rospy.loginfo("Switching to forward gear.")
-            #         self.gear_cmd.ui16_cmd = 3  # Forward gear
-            #         self.gear_pub.publish(self.gear_cmd)
-            #         # Reset look-ahead distance for forward
-            #         self.look_ahead = 4.0  # Normal look-ahead in forward
+            if abs(angle_to_waypoint) > np.pi / 2:
+                if self.gear_cmd.ui16_cmd != 1:  # If not already in reverse
+                    rospy.loginfo("Waypoint is behind. Stopping the car to switch to reverse gear.")
+                    self.stop_car()
+
+                    rospy.sleep(4)
+                    self.brake_cmd.f64_cmd = 0.0  # Disable Break
+                    self.brake_pub.publish(self.brake_cmd)
+                    rospy.loginfo("Switching to reverse gear.")
+                    self.gear_cmd.ui16_cmd = 1  # Reverse gear
+                    self.gear_pub.publish(self.gear_cmd)
+                    # Adjust look-ahead distance for reverse
+                    self.look_ahead = 2.0  # Shorter look-ahead in reverse
+            else:
+                if self.gear_cmd.ui16_cmd != 3:  # If not already in forward
+                    rospy.loginfo("Waypoint is ahead. Stopping the car to switch to forward gear.")
+                    self.brake_cmd.f64_cmd = 0.2  # Apply full brake
+                    #self.accel_cmd.f64_cmd = 0.0  # Disable acceleration
+                    self.brake_pub.publish(self.brake_cmd)
+                    #self.accel_pub.publish(self.accel_cmd)
+                    # self.stop_car()
+                    rospy.loginfo("Car stopped.")
+                    self.steer_cmd.angular_position = 0.0
+
+                    self.steer_pub.publish(self.steer_cmd)
+                    rospy.sleep(4)
+                    self.brake_cmd.f64_cmd = 0.0  # Disable Break
+                    self.brake_pub.publish(self.brake_cmd)
+                    rospy.loginfo("Switching to forward gear.")
+                    self.gear_cmd.ui16_cmd = 3  # Forward gear
+                    self.gear_pub.publish(self.gear_cmd)
+                    # Reset look-ahead distance for forward
+                    self.look_ahead = 4.0  # Normal look-ahead in forward
 
             print(f"goal :  {self.goal}")
             print(f"lookahead : {self.look_ahead}")
@@ -433,13 +446,13 @@ class PurePursuit(object):
                 self.dist_arr[i] = self.dist((self.path_points_x[i], self.path_points_y[i]), (curr_x, curr_y))
             # finding those points which are less than the look ahead distance (will be behind and ahead of the vehicle)
             # self.dist_arr = self.dist_arr[self.goal:]
-            goal_arr = np.where( (self.dist_arr < self.look_ahead + 0.3) & (self.dist_arr > self.look_ahead - 0.3))[0]
+            # goal_arr = np.where( (self.dist_arr < self.look_ahead + 0.3) & (self.dist_arr > self.look_ahead - 0.3))[0]
 
-            # goal_arr = np.where(
-            #     (self.dist_arr < self.look_ahead + 0.3) &
-            #     (self.dist_arr > self.look_ahead - 0.3) &
-            #     (np.arange(len(self.dist_arr)) >= self.last_max_goal_idx)
-            # )[0]
+            goal_arr = np.where(
+                (self.dist_arr < self.look_ahead + 0.3) &
+                (self.dist_arr > self.look_ahead - 0.3) &
+                (np.arange(len(self.dist_arr)) >= self.last_max_goal_idx)
+            )[0]
             
             print(self.dist_arr)
             # finding the goal point which is the last in the set of points less than the lookahead distance
@@ -505,18 +518,18 @@ class PurePursuit(object):
                 print("Steering wheel angle: " + str(steering_angle) + " degrees")
                 print("\n")
 
-            # Log detailed metrics to separate CSV
-            self.metrics_writer.writerow([
-                round(current_time, 2),
-                curr_x, curr_y, curr_yaw,
-                self.speed, round(filt_vel, 3),
-                ct_error, f_delta_deg, steering_angle, self.goal
-            ])
+            
 
             current_time = rospy.get_time()
             filt_vel     = self.speed_filter.get_data(self.speed)
             output_accel = self.pid_speed.get_control(current_time, self.desired_speed - filt_vel)
-
+            # Log detailed metrics to separate CSV
+            # self.metrics_writer.writerow([
+            #     round(current_time, 2),
+            #     curr_x, curr_y, curr_yaw,
+            #     self.speed, round(filt_vel, 3),
+            #     ct_error, f_delta_deg, steering_angle, self.goal
+            # ])
             if output_accel > self.max_accel:
                 output_accel = self.max_accel
 

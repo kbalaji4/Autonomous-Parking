@@ -220,16 +220,13 @@ def main():
     #glon = -88.2353660
     glat = 40.092788
     glon = -88.235711
-    goal_yaw_deg = 180  # Goal yaw in degrees 180 (facing South)
-    
-    
-    
-    
-    
+    goal_yaw_deg = 0  # Goal yaw in degrees 90 (facing West)
+
+
     # Convert yaw angles from degrees to radians
     start_yaw_rad = car_heading_to_planner_yaw(start_yaw_deg)
     goal_yaw_rad = car_heading_to_planner_yaw(goal_yaw_deg)
-    
+
     # Convert GPS coordinates to local coordinates
     start_x, start_y = wps_to_local_xy(slon, slat, olat, olon)
     goal_x, goal_y = wps_to_local_xy(glon, glat, olat, olon)
@@ -278,7 +275,7 @@ def main():
     goal_pos = [goal_x_shifted,goal_y_shifted,goal_yaw_rad]
     #print(goal_pos)
     goal_pos2 = [49.5948455962297+3.5, 12.416345388704688, 4.71238898038469]
-    car = SimpleCar(env, goal_pos, start_pos)
+    car = SimpleCar(env, start_pos, goal_pos)
     
     # Update car parameters to match GEM e2 specs
     car.l = 1.75  # Wheelbase: 69 in = 1.75m
@@ -513,5 +510,6 @@ if __name__ == '__main__':
     #     try:
     #         gotogoal(goal_pos)
     #     except Exception as e:
+    #         print(f"Error: {e}")
     #         print(f"Obstacle detected at {goal_pos} going to next goal")
     #         continue

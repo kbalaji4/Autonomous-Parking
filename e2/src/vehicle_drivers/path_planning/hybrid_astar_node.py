@@ -294,100 +294,107 @@ class Hybrid(object):
         rospy.loginfo("⌛ Waiting for GPS and IMU...")
         self.wait_for_pose()
         rospy.loginfo("✅ Received live GPS and IMU.")
-        # Set origin GPS coordinates
         
-        self.update_gem_state()
-        #self.update_gem_state_test() # No GPS Needed for testing
+        # Initialize map and environment once
         map = Map()
         map.add_walls() #if you want parking spots
-       
-        start_x, start_y, start_yaw = self.state
-        goal_lon, goal_lat, goal_yaw = self.goal
+        env = Environment(map.obs, lx=map.lx, ly=map.ly)
         
-        goal_yaw = self.car_heading_to_planner_yaw(goal_yaw) # radians
-        print(goal_yaw)
-        goal_x, goal_y = self.wps_to_local_xy(goal_lon, goal_lat)
-
-
-        
-        start_x_shifted = start_x - map.grid_top_left[0]
-        start_y_shifted = map.ly - (map.grid_top_left[1] - start_y)  # Flip y-axis
-        goal_x_shifted = goal_x - map.grid_top_left[0]
-        goal_y_shifted = map.ly - (map.grid_top_left[1] - goal_y)  # Flip y-axis\\
-
-        print(start_x_shifted, start_y_shifted)
-        print(goal_x_shifted, goal_y_shifted)
-        
-        # Initialize environment and car with shifted coordinates and yaw angles
-        env = Environment(map.obs, lx=map.lx, ly=map.ly)  # Set environment size based on coordinates
-        start_pos = [start_x_shifted, start_y_shifted, start_yaw]  # Initial yaw in radians
-        goal_pos = [goal_x_shifted, goal_y_shifted, goal_yaw]     # Final yaw in radians
-        car = SimpleCar(env, start_pos, goal_pos)
-        
-        # Update car parameters to match GEM e2 specs
+        # Initialize car parameters
+        car = SimpleCar(env, [0, 0, 0], [0, 0, 0])  # Dummy positions, will be updated
         car.l = 1.75  # Wheelbase: 69 in = 1.75m
         car.carl = 2.62  # Length: 103 in = 2.62m
         car.carw = 1.41  # Width: 55.5 in = 1.41m
         car.max_phi = 0.3  # Maximum steering angle
         
-        # Adjust grid size based on environment size
-        #cell_size = max(0.25, env_size / 200)  # Ensure reasonable number of cells
-        grid = Grid(env, cell_size= map.cell_size)
+        # Initialize grid
+        grid = Grid(env, cell_size=map.cell_size)
         
-        # Initialize hybrid A* planner with modified parameters for smoother paths
+        # Initialize hybrid A* planner
         hastar = HybridAstar(car, grid, reverse=True)
-        
-        # Modify weights to prioritize orientation
         hastar.w1 = 0.8   # weight for astar heuristic
         hastar.w2 = 0.2   # weight for simple heuristic
         hastar.w3 = 0.2  # increased weight for steering angle change
         hastar.w4 = 0.2   # increased weight for turning
         hastar.w5 = 2.0   # weight for reversing
+
+        # Store best path found so far
+        best_path = None
+        best_path_cost = float('inf')
+        last_plan_time = 0
+        planning_interval = 1.0  # 1 second interval
+
+        def plan_and_publish(event):
+            nonlocal best_path, best_path_cost, last_plan_time
+            
+            try:
+                current_time = time()
+                # Only attempt planning if enough time has passed
+                if current_time - last_plan_time < planning_interval:
+                    return
+                
+                last_plan_time = current_time
+                
+                # Update current vehicle state
+                self.update_gem_state()
+                start_x, start_y, start_yaw = self.state
+                goal_lon, goal_lat, goal_yaw = self.goal
+                
+                goal_yaw = self.car_heading_to_planner_yaw(goal_yaw) # radians
+                goal_x, goal_y = self.wps_to_local_xy(goal_lon, goal_lat)
+                
+                # Shift coordinates relative to the static grid's top-left corner
+                start_x_shifted = start_x - map.grid_top_left[0]
+                start_y_shifted = map.ly - (map.grid_top_left[1] - start_y)  # Flip y-axis
+                goal_x_shifted = goal_x - map.grid_top_left[0]
+                goal_y_shifted = map.ly - (map.grid_top_left[1] - goal_y)  # Flip y-axis
+                
+                # Update car start and goal positions
+                car.start_pos = [start_x_shifted, start_y_shifted, start_yaw]
+                car.end_pos = [goal_x_shifted, goal_y_shifted, goal_yaw]
+                
+                # Plan path
+                rospy.loginfo("🚀 Planning path from live GPS to local goal...")
+                path, closed_ = hastar.search_path(heu=1, extra=True)
+                
+                if path:
+                    # Calculate path cost (simple heuristic for now)
+                    path_cost = hastar.simple_heuristic(path[0].pos)
+                    
+                    # Update best path if this one is better
+                    if path_cost < best_path_cost:
+                        best_path = path
+                        best_path_cost = path_cost
+                        rospy.loginfo(f"✅ Found better path with cost: {path_cost:.2f}")
+                        
+                        # Convert path back to original coordinates
+                        for state in path:
+                            local_x, local_y = self.planner_to_local_coords(state.pos[0], state.pos[1], map)
+                            state.pos[0] = local_x
+                            state.pos[1] = local_y
+                            state.pos[2] = np.degrees(state.pos[2])  # Convert yaw to degrees
+                            state.pos[2] = state.pos[2] % 360.0
+                            state.pos[2] = (90-state.pos[2]) % 360.0
+                        
+                        # Downsample path for waypoints
+                        step = max(1, len(path) // self.num_points)  
+                        path = path[::step] + [path[-1]]
+                        self.publish_path(path)
+                        rospy.loginfo(f"✅ Published {len(path)} waypoints")
+                else:
+                    rospy.logwarn("⚠️ No valid path found in this iteration")
+                    
+            except Exception as e:
+                rospy.logerr(f"Error in planning loop: {str(e)}")
+                # Don't re-raise the exception, just log it and continue
+
+        # Create timer for continuous planning (0.1 second interval for checking)
+        timer = rospy.Timer(rospy.Duration(0.1), plan_and_publish)
         
         try:
-            #self.setup_vehicle_tracking()
-            rospy.loginfo("🚀 Planning path from live GPS to local goal...")
-            # Plan path
-            print("Planning path...")
-            #print(f"Environment size: {env_size:.2f}m x {env_size:.2f}m")
-            print(f"Cell size: {map.cell_size:.2f}m")
-            #print(f"Environment center: x={center_x:.2f}, y={center_y:.2f}")
-            print(f"Start position (local): x={start_x:.2f}, y={start_y:.2f}, yaw={start_yaw:.3f}°")
-            print(f"Goal position (local): x={goal_x:.2f}, y={goal_y:.2f}, yaw={goal_yaw:.3f}°")
-            print(f"Start position (shifted): x={start_x_shifted:.2f}, y={start_y_shifted:.2f}, yaw={start_yaw:.3f}°")
-            print(f"Goal position (shifted): x={goal_x_shifted:.2f}, y={goal_y_shifted:.2f}, yaw={goal_yaw:.3f}°")
-            path, closed_ = hastar.search_path(heu=1, extra=True)
-            # t = time()
-            # print('Total time: {}s'.format(round(time()-t, 3)))
-            if path:
-                for state in path:
-                    local_x, local_y = self.planner_to_local_coords(state.pos[0], state.pos[1], map)
-                    state.pos[0] = local_x
-                    state.pos[1] = local_y
-                    # state.pos[0] = state.pos[0] + center_x - env_size/2
-                    # state.pos[1] = state.pos[1] + center_y - env_size/2
-                    state.pos[2] = np.degrees(state.pos[2])  # Convert yaw to degrees
-                    # Normalize yaw to [0, 360)
-                    state.pos[2] = state.pos[2] % 360.0
-                    state.pos[2] = (90-state.pos[2]) % 360.0
-                    
-                
-                # Downsample path for waypoints (use smaller step for shorter paths)
-                step = max(1, len(path) // self.num_points)  
-                path = path[::step] + [path[-1]]
-                self.publish_path(path)
-
-                # Save both original and smoothed paths to CSV with local coordinates and yaw in degrees
-                self.save_path_to_csv(path, 'hybrid_astar_path_original.csv', self.olat, self.olon)
-                print(f"Paths saved to waypoints/")
-                print(f"Number of waypoints (original): {len(path)}")
-                print("Plotting original path...")
-                self.plot_path(env, path, closed_, self.olat, self.olon)
-            else:
-                rospy.logerr("❌ Path planning failed.")
             rospy.spin()
         finally:
-            pass
+            timer.shutdown()
             #self.cleanup_vehicle_tracking()
         
       
@@ -397,13 +404,25 @@ if __name__ == "__main__":
     try:
         # lon, lat, yaw (degrees)
         parking_spots = [
+            (-88.235711,40.092788,180),  # Yellow main parking spot facing south  
             (-88.2353660,40.0928328, 90), # spot facing east
-            (-88.235317,40.092751,141.43), # angle parking spot (not supported with walls)
-            (-88.235711,40.092788,180),  # Yellow main parking spot facing south   
-            (-88.2359994,40.0928563,270)
-            ] 
-        hybrid.goal = parking_spots[2]
-        hybrid.start_hybrid()
+            #(-88.235317,40.092751,141.43), # angle parking spot (not supported with walls)
+            #(-88.2359994,40.0928563,270)
+        ] 
+
+        # Try each parking spot until one works
+        for i, spot in enumerate(parking_spots):
+            try:
+                rospy.loginfo(f"Attempting to plan path to parking spot {i+1}")
+                hybrid.goal = spot
+                hybrid.start_hybrid()
+                break  # If we get here, planning succeeded
+            except Exception as e:
+                rospy.logerr(f"Failed to plan path to parking spot {i+1}: {str(e)}")
+                if i == len(parking_spots) - 1:  # If this was the last spot
+                    rospy.logerr("Failed to plan path to any parking spot!")
+                    raise  # Re-raise the last error
+                continue  # Try the next spot
     except rospy.ROSInterruptException:
         hybrid.cleanup_vehicle_tracking()
     

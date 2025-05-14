@@ -1,5 +1,6 @@
 from math import pi, tan, sqrt
 from itertools import product
+from time import time
 
 from dpp.methods.dubins_path import DubinsPath
 from dpp.methods.astar import Astar
@@ -190,7 +191,7 @@ class HybridAstar:
         return list(reversed(route))
     
     def search_path(self, heu=1, extra=False):
-        """ Hybrid A* pathfinding. """
+        """ Hybrid A* pathfinding with time limit. """
 
         root = self.construct_node(self.start)
         root.g = float(0)
@@ -205,7 +206,18 @@ class HybridAstar:
         open_ = [root]
 
         count = 0
+        start_time = time()
+        best_path = None
+        best_cost = float('inf')
+        
         while open_:
+            # Check time limit
+            if time() - start_time > 1.0:  # 1 second time limit
+                if best_path:
+                    return best_path, closed_
+                else:
+                    raise RuntimeError("Time limit exceeded without finding any valid path")
+                    
             count += 1
             best = min(open_, key=lambda x: x.f)
 
@@ -222,15 +234,21 @@ class HybridAstar:
                     route = self.backtracking(best) + d_route
                     path = self.car.get_path(self.start, route)
                     cost += best.g_
-                    print('Shortest path: {}'.format(round(cost, 2)))
-                    print('Total iteration:', count)
                     
-                    return path, closed_
+                    # Update best path if this one is better
+                    if cost < best_cost:
+                        best_path = path
+                        best_cost = cost
+                        print('Found better path: {}'.format(round(cost, 2)))
+                        print('Iterations:', count)
+                    
+                    # If we have a good enough path, return it
+                    if cost < 1.5 * self.simple_heuristic(self.start):  # 50% better than straight line
+                        return path, closed_
 
             children = self.get_children(best, heu, extra)
 
             for child, branch in children:
-
                 if child in closed_:
                     continue
 
@@ -251,4 +269,8 @@ class HybridAstar:
                     open_.remove(child)
                     open_.append(child)
 
+        # If we have a best path, return it
+        if best_path:
+            return best_path, closed_
+            
         return None, None

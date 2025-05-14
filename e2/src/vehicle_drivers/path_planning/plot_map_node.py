@@ -2,6 +2,8 @@
 
 import rospy
 import numpy as np
+import open3d as o3d
+import time
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from matplotlib.collections import PatchCollection
@@ -9,6 +11,7 @@ import matplotlib.animation as animation
 from threading import Lock
 
 from sensor_msgs.msg import NavSatFix, PointCloud2
+from visualization_msgs.msg import Marker, MarkerArray
 import sensor_msgs.point_cloud2 as pc2
 from septentrio_gnss_driver.msg import INSNavGeod
 from nav_msgs.msg import Path
@@ -59,6 +62,11 @@ class MapPlotter:
         # Subscribers & Publishers
         self.sub = rospy.Subscriber('/ouster/points', PointCloud2, self.lidar_callback, queue_size=1)
 
+        self.filtered_cloud_pub = rospy.Publisher('/filtered_points', PointCloud2, queue_size=1)
+        self.filtered_intense_cloud_pub = rospy.Publisher('/filtered_intense_points', PointCloud2, queue_size=1)
+        self.pub_markers = rospy.Publisher('/cone_world_positions', PoseStamped, queue_size=10)
+        self.marker_pub = rospy.Publisher('/lidar_obstacles', MarkerArray, queue_size=1)
+
         
         # Setup plot
         self.setup_plot()
@@ -83,56 +91,123 @@ class MapPlotter:
         return points_array[mask]
 
     def lidar_callback(self, msg: PointCloud2):
+        callback_start_time = time.time()
         # get state
         x, y, yaw = self.get_vehicle_state()
+        get_vehicle_state_time = time.time() - callback_start_time
+        # rospy.loginfo(f"get_vehicle_state started at {callback_start_time}s, took {get_vehicle_state_time:.4f}s")
 
+        read_points_start_time = time.time()
         # 2) Convert to numpy Nx3
         pts = np.array([[p[0],p[1],p[2],p[3]] for p in pc2.read_points(msg, skip_nans=True)])
         if pts.shape[0] < 50:
             return
+        read_points_time = time.time() - read_points_start_time
+        # rospy.loginfo(f"read_points started at {read_points_start_time}s, took {read_points_time:.4f}s")
         
-        # just_filtered_pts = self.filter_points(pts)
-        # filtered_cloud = pc2.create_cloud_xyz32(
-        #     header=msg.header,
-        #     points=just_filtered_pts[:, :3]  # Only use x,y,z coordinates
-        # )
-        # self.filtered_cloud_pub.publish(filtered_cloud)
         
-        """
-        filter points based on range and height
-        then just pick the first one (not even closest just first) and add it as a cone to the map
-        """
+        just_filtered_pts = self.filter_points(pts)
+        filtered_cloud = pc2.create_cloud_xyz32(
+            header=msg.header,
+            points=just_filtered_pts[:, :3]  # Only use x,y,z coordinates
+        )
+        self.filtered_cloud_pub.publish(filtered_cloud)
         
-
+        # print("points.shape: ", pts.shape)
+        # print("4th col max min mean: ", np.max(pts[:,3]), np.min(pts[:,3]), np.mean(pts[:,3]))
+        filter_points_start_time = time.time()
         high_intensity_pts = pts[pts[:,3] > 5000.0] # only strong reflections
+        
 
         # filter points
         high_intensity_pts = self.filter_points(high_intensity_pts)
+        filter_points_time = time.time() - filter_points_start_time
+        rospy.loginfo(f"filter_points started at {filter_points_start_time}s, took {filter_points_time:.4f}s")
+        print("high_intensity points shape: ", high_intensity_pts.shape)
 
-        if len(high_intensity_pts) > 0: # if empty do nothing
+        filtered_intense_cloud = pc2.create_cloud_xyz32(
+            header=msg.header,
+            points=high_intensity_pts[:, :3]  # Only use x,y,z coordinates
+        )
+        
+        # Publish filtered cloud
+        self.filtered_intense_cloud_pub.publish(filtered_intense_cloud)
 
-            first_pt = high_intensity_pts[0]
+        # 3) Make Open3D pointcloud
 
-            cone_x, cone_y = first_pt[0] + x, first_pt[1] + y
+        pts = high_intensity_pts[:,:3] # xyz no intensity
+        if len(high_intensity_pts) == 0:
+            return
+        
+        dbscan_start_time = time.time()
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pts)
+        labels = np.array(pcd.cluster_dbscan(eps=0.3, min_points=3, print_progress=False))
+        dbscan_end_time = time.time() - dbscan_start_time
+        # rospy.loginfo(f"dbscan started at {dbscan_start_time}s, took {dbscan_end_time:.4f}s")
+        # print("labels: ", labels)
+        unique_labels = set(labels) - {-1}
+        print("num unique labels: ", len(unique_labels))
+
+        marker_array = MarkerArray()
+        marker_id = 0
+        # 8) Publish centroids if there are any
+        for k in unique_labels:
+            class_member_mask = (labels == k)
+            cluster = np.asarray(pcd.points)[class_member_mask]
+
+            # if len(cluster) < 3:
+            #     # skip small clusters
+            #     continue 
+
+            # get centroid
+            centroid = np.mean(cluster, axis=0)
+            
+            # Create a marker for this obstacle
+            marker = Marker()
+            marker.header = msg.header
+            marker.ns = "obstacles"
+            marker.id = marker_id
+            marker.type = Marker.SPHERE
+            marker.action = Marker.ADD
+            marker.pose.position.x = centroid[0]
+            marker.pose.position.y = centroid[1]
+            marker.pose.position.z = centroid[2]
+            marker.pose.orientation.w = 1.0
+
+            # cluster dims for our markers
+            cluster_std = np.std(cluster, axis=0)
+            marker.scale.x = 0.5
+            marker.scale.y = 0.5
+            marker.scale.z = 0.5
+
+            marker.color.a = 0.7
+            marker.color.r = 1.0
+            marker.color.g = 0.0
+            marker.color.b = 0.0
+
+            marker_array.markers.append(marker)
+            marker_id += 1
+            # Rotation matrix for vehicle heading
+            cos_yaw = np.cos(yaw)
+            sin_yaw = np.sin(yaw)
+            
+            # Transform centroid from LiDAR frame to global frame
+            global_x = x + (centroid[0] * cos_yaw - centroid[1] * sin_yaw)
+            global_y = y + (centroid[0] * sin_yaw + centroid[1] * cos_yaw)
+            rospy.loginfo(f"Centroid: {centroid[0], centroid[1]}, xy: {x, y}, global: {global_x, global_y} Marker ID: {marker_id}, timestamp: {msg.header.stamp}")
+        
+
+            cone_x, cone_y = global_x, global_y
 
             # print("successfully added cone_x, cone_y: ", cone_x, cone_y)
-            # cone_x, cone_y:  64.24394957565457 15.873146025927554
-
-            if self.map.add_cone(cone_x, cone_y):
-                
+            add_cone = self.map.add_cone(cone_x, cone_y)
+            print(add_cone)
+            if add_cone:
                 self.update_obstacles()
 
-        # print("first high intensity point: ", high_intensity_pts[0])
-
-        # could go by min distance too
-
-        # filtered_intense_cloud = pc2.create_cloud_xyz32(
-        #     header=msg.header,
-        #     points=high_intensity_pts[:, :3]  # Only use x,y,z coordinates
-        # )
-        
-        # # Publish filtered cloud
-        # self.filtered_intense_cloud_pub.publish(filtered_intense_cloud)
+        # vizualization: obstacle markers
+        self.marker_pub.publish(marker_array)
 
     def setup_plot(self):
         """Initialize the plot with map and static elements"""
@@ -246,6 +321,8 @@ class MapPlotter:
             
             # Convert heading to yaw
             yaw = self.heading_to_yaw(self.heading)
+            rospy.loginfo(f"heading degrees {self.heading}, yaw {yaw}") # should go negative right
+
             
             # Shift coordinates relative to map origin
             x_shifted = local_x - self.map.grid_top_left[0]
