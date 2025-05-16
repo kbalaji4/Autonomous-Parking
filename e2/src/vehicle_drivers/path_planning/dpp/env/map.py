@@ -5,12 +5,12 @@ class Map:
         self.grid_bottom_right = (85, -20)
         self.lx = self.grid_bottom_right[0] - self.grid_top_left[0]  # 110m
         self.ly = self.grid_top_left[1] - self.grid_bottom_right[1]  # 30m
-        self.cell_size = max(0.25, self.lx / 200)
+        self.cell_size = max(1, self.lx / 200)
         self.cones = []  # list to store cone positions
         self.static_obs = 0 # num static, includes walls and spaces
         
     
-    def add_walls(self):
+    def lot1(self):
         #self.obs.append([60,10,0.1,10]) 
         # spot is 5 m * 2.7432m
         # 2.7432 from driver to entrance
@@ -32,6 +32,32 @@ class Map:
         
         
         for i in range(1,2):
+            self.obs.append([spot[0]+2-(3.5*i)-0.25,spot[1]-3,0.1,7]) # dummy spot
+            self.obs.append([spot[0]-2-(3.5*i)+0.25,spot[1]-3,0.1,7])
+            self.obs.append([spot[0]-2-(3.5*i)+0.25,spot[1]-3,3.5,0.1]) 
+            self.obs.append([spot[0]+2+(3.5*i)-0.25,spot[1]-3,0.1,7])  # dummy spot
+            self.obs.append([spot[0]-2+(3.5*i)+0.25,spot[1]-3,0.1,7])
+            self.obs.append([spot[0]-2+(3.5*i)+0.25,spot[1]-3,3.5,0.1]) 
+            
+    def lot2(self):
+        spot = (49.5948455962297, 12.416345388704688)
+     
+        # self.obs.append([spot[0]+1.3716,spot[1]-(5-2.7432),0.1,5]) 
+        # self.obs.append([spot[0]+1.3716-2.7432,spot[1]-(5-2.7432),0.1,5])
+        # self.obs.append([spot[0]+1.3716-2.7432,spot[1]-(5-2.7432),2.7432,0.1]) 
+        
+        # self.obs.append([spot[0]+2,spot[1]-3,0.1,6]) # real spot
+        # self.obs.append([spot[0]-2,spot[1]-3,0.1,6])
+        # self.obs.append([spot[0]-2,spot[1]-3,4,0.1]) 
+
+        self.obs.append([spot[0]+2-0.25,spot[1]-3,0.1,7]) # real spot
+        self.obs.append([spot[0]-2+0.25,spot[1]-3,0.1,7])
+        self.obs.append([spot[0]-2+0.25,spot[1]-3,3.5,0.1]) 
+        # self.obs.append([spot[0]-2-0.25,spot[1]+4,3.5,0.1]) 
+        
+        self.obs.append([30,10,1,30]) # real spot
+        
+        for i in range(1,3):
             self.obs.append([spot[0]+2-(3.5*i)-0.25,spot[1]-3,0.1,7]) # dummy spot
             self.obs.append([spot[0]-2-(3.5*i)+0.25,spot[1]-3,0.1,7])
             self.obs.append([spot[0]-2-(3.5*i)+0.25,spot[1]-3,3.5,0.1]) 

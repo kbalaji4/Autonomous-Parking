@@ -198,7 +198,7 @@ def main():
     # Create test case
     #tc = TestCase()
     map = Map()
-    map.add_walls()
+    map.lot1()
     
     
    
@@ -218,11 +218,13 @@ def main():
     
     #glat = 40.0928328
     #glon = -88.2353660
-    glat = 40.092788
-    glon = -88.235711
-    goal_yaw_deg = 180  # Goal yaw in degrees 180 (facing South)
-    
-    
+    # glat = 40.092788
+    # glon = -88.235711
+    # goal_yaw_deg = 180  # Goal yaw in degrees 180 (facing South)
+    #(-88.235317,40.092751,141.43)
+    glat = 40.092751
+    glon = -88.235317
+    goal_yaw_deg = 141.43
     
     
     
@@ -273,12 +275,12 @@ def main():
     
     
     
-    start_pos = [start_x_shifted, start_y_shifted, start_yaw_rad]  # Initial yaw in radians
+    start_pos = [60, start_y_shifted, start_yaw_rad]  # Initial yaw in radians
     #goal_pos = [goal_x_shifted, goal_y_shifted, goal_yaw_rad]     # Final yaw in radians
     goal_pos = [goal_x_shifted,goal_y_shifted,goal_yaw_rad]
     #print(goal_pos)
     goal_pos2 = [49.5948455962297+3.5, 12.416345388704688, 4.71238898038469]
-    car = SimpleCar(env, goal_pos, start_pos)
+    car = SimpleCar(env, start_pos, goal_pos)
     
     # Update car parameters to match GEM e2 specs
     car.l = 1.75  # Wheelbase: 69 in = 1.75m
@@ -508,10 +510,10 @@ def gotogoal(goal_pos):
 
 if __name__ == '__main__':
     main()
-    goal_pos_arr = [[49.5948455962297, 12.416345388704688,4.71238898038469],[49.5948455962297+3.5, 12.416345388704688, 4.71238898038469]]
-    for goal_pos in goal_pos_arr:
-        try:
-            gotogoal(goal_pos)
-        except Exception as e:
-            print(f"Obstacle detected at {goal_pos} going to next goal")
-            continue
+    # goal_pos_arr = [[49.5948455962297, 12.416345388704688,4.71238898038469],[49.5948455962297+3.5, 12.416345388704688, 4.71238898038469]]
+    # for goal_pos in goal_pos_arr:
+    #     try:
+    #         gotogoal(goal_pos)
+    #     except Exception as e:
+    #         print(f"Obstacle detected at {goal_pos} going to next goal")
+    #         continue
